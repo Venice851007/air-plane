@@ -1,0 +1,11 @@
+name = "air-plane"
+main = "src/index.js"
+compatibility_date = "2026-09-18"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "RANKS"
+id = "29acafa63d7147f4b6beff2cb94a40c5"
