@@ -206,7 +206,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
   <div class="overlay hidden" id="boostScreen">
     <div class="title" style="font-size:1.5rem">关卡突破 · 选择强化</div>
     <div class="subtitle" id="boostSub">每过一关可选一项上限提升</div>
-    <div class="boost-hint">僚机初始上限 4，其余靠通关成长</div>
+    <div class="boost-hint">僚机/炸弹/移速/威力初始上限均为 4，其余靠通关成长</div>
     <div class="boost-pick" id="boostPick"></div>
   </div>
 
@@ -245,10 +245,10 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-psikyo';
-const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=5,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
-const MAX_SPEED_LV=5,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
-const BASE_WING_CAP=4;
+const GAME_VER='2026.09.22-loot4';
+const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
+const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
+const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
 const EXTENDS=[50000,150000,300000,500000];
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
@@ -299,7 +299,7 @@ const SHIPS=[
 let selectedShip=0,W=0,H=0,dpr=1;
 let state='title',score=0,lives=3,revivesUsed=0,power=1,bombs=3,wingLevel=0,aliveWingmen=0;
 let speedLv=0,fireSoft=0,magnetLv=0,shieldStock=0;
-let wingCap=BASE_WING_CAP,bombCap=2;
+let wingCap=BASE_WING_CAP,bombCap=BASE_BOMB_CAP,speedCap=BASE_SPEED_CAP,powerCap=BASE_POWER_CAP;
 let invUntil=0,lastTime=0,flashA=0,shake=0,extendIdx=0,combo=0,comboT=0;
 let stage=1,cycle=1,stageT=0,waveIdx=0,boss=null,midDone=false,bossSpawned=false;
 let bannerT=0,charge=0,charging=false,fireCd=0,wingFireCd=0,bombLatch=false;
@@ -649,8 +649,8 @@ function updateWingmen(dt){
 
 function resetRun(){
   const ship=SHIPS[selectedShip];
-  player.ship=ship;score=0;lives=MAX_LIVES;revivesUsed=0;power=1;bombs=ship.bombStock;bombCap=ship.bombStock;wingLevel=0;aliveWingmen=0;wingCap=BASE_WING_CAP;
-  speedLv=0;fireSoft=0;magnetLv=0;shieldStock=0;
+  player.ship=ship;score=0;lives=MAX_LIVES;revivesUsed=0;power=1;bombs=BASE_BOMB_CAP;bombCap=BASE_BOMB_CAP;wingLevel=0;aliveWingmen=0;wingCap=BASE_WING_CAP;
+  speedLv=0;speedCap=BASE_SPEED_CAP;powerCap=BASE_POWER_CAP;fireSoft=0;magnetLv=0;shieldStock=0;
   extendIdx=0;combo=0;comboT=0;stage=1;cycle=1;stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;
   pBullets=[];eBullets=[];enemies=[];parts=[];items=[];medals=[];beams=[];shieldPulse=0;shieldR=0;
   player.x=W/2;player.y=H-100;charge=0;charging=false;fireCd=0;wingFireCd=0;
@@ -703,14 +703,24 @@ function addScore(n,prox){
 }
 
 function dropLoot(x,y,kind){
-  if(Math.random()<0.32+kind*0.18) items.push({type:'P',x,y,vy:55,vx:(Math.random()-.5)*50,life:9,r:18});
-  if(Math.random()<0.1) items.push({type:'B',x:x+10,y:y-5,vy:50,vx:(Math.random()-.5)*40,life:9,r:18});
-  // 僚机增益 — not too rare, not flooding
-  const wChance=kind>=2?0.55:kind>=1?0.22:0.06;
-  if((wingLevel<wingCap||aliveWingmen<wingLevel)&&Math.random()<wChance) items.push({type:'W',x:x-8,y:y+6,vy:48,vx:(Math.random()-.5)*45,life:10,r:18});
-  const n=1+((Math.random()*3)|0)+kind;
-  for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*28,y:y+(Math.random()-.5)*16,vy:70+Math.random()*50,vx:(Math.random()-.5)*60,life:5,val:Math.floor((50+stage*15)*(1+(cycle-1)*0.12))});
+  // kind0 小兵：不掉任何增益（仅少量奖牌）
+  // kind1 精英：随机 1~3 个增益
+  // kind2+ Boss/中型：随机 3~5 个增益
+  if(kind<=0){
+    const n=1+((Math.random()*2)|0);
+    for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*24,y:y+(Math.random()-.5)*14,vy:65+Math.random()*40,vx:(Math.random()-.5)*50,life:4.5,val:Math.floor((30+stage*10)*(1+(cycle-1)*0.1))});
+    return;
+  }
+  const count=kind>=2?(3+((Math.random()*3)|0)):(1+((Math.random()*3)|0));
+  const pool=['P','B','W'];
+  for(let i=0;i<count;i++){
+    const t=pool[(Math.random()*pool.length)|0];
+    items.push({type:t,x:x+(Math.random()-.5)*50,y:y+(Math.random()-.5)*36,vy:45+Math.random()*25,vx:(Math.random()-.5)*55,life:10,r:18});
+  }
+  const n=2+((Math.random()*3)|0)+kind;
+  for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*32,y:y+(Math.random()-.5)*18,vy:70+Math.random()*50,vx:(Math.random()-.5)*60,life:5,val:Math.floor((50+stage*15)*(1+(cycle-1)*0.12))});
 }
+
 
 function mkEnemy(o){
   const m=cMult();
@@ -1013,7 +1023,7 @@ function pushP(b){if(pBullets.length<MAX_PBUL) pBullets.push(b);}
 function applyPOverflow(){
   // P already maxed → convert to soft upgrades (prefer movement speed)
   const opts=[];
-  if(speedLv<MAX_SPEED_LV) opts.push({k:'speed',w:4,label:'移速+1'});
+  if(speedLv<speedCap) opts.push({k:'speed',w:4,label:'移速+1'});
   if(fireSoft<MAX_FIRE_SOFT) opts.push({k:'fire',w:2,label:'射速+1'});
   if(magnetLv<MAX_MAGNET_LV) opts.push({k:'magnet',w:2,label:'磁吸+1'});
   if(bombs<bombCap) opts.push({k:'bomb',w:1,label:'炸弹+1'});
@@ -1029,7 +1039,7 @@ function applyPOverflow(){
     for(const o of opts){r-=o.w;if(r<=0){pick=o;break;}}
     if(!pick) pick=opts[0];
   }
-  if(pick.k==='speed') speedLv++;
+  if(pick.k==='speed') speedLv=Math.min(speedCap,speedLv+1);
   else if(pick.k==='fire') fireSoft++;
   else if(pick.k==='magnet') magnetLv++;
   else if(pick.k==='bomb') bombs=Math.min(bombCap,bombs+1);
@@ -1324,14 +1334,15 @@ function openStageBoost(done){
   if(els.hud) els.hud.style.display='none';
   if(els.touch) els.touch.style.display='none';
   const sub=document.getElementById('boostSub');
-  if(sub) sub.textContent='突破第 '+stage+' 关 · 选一项成长（僚机上限 '+wingCap+'）';
+  if(sub) sub.textContent='突破第 '+stage+' 关 · 选一项上限成长（僚'+wingCap+' / 弹'+bombCap+' / 威力'+powerCap+' / 速'+speedCap+'）';
   const opts=[];
   if(wingCap<MAX_WING) opts.push({k:'wingCap',title:'僚机上限 +1',desc:'当前 '+wingCap+' → '+(wingCap+1)+'（吃「僚」可编到此数）'});
-  if(bombCap<5) opts.push({k:'bombCap',title:'炸弹上限 +1',desc:'上限 '+bombCap+' → '+(bombCap+1)+'，并立刻补 1 枚'});
-  if(speedLv<MAX_SPEED_LV) opts.push({k:'speed',title:'移速 +1',desc:'走位更灵活（'+speedLv+'/'+MAX_SPEED_LV+'）'});
+  if(bombCap<8) opts.push({k:'bombCap',title:'炸弹上限 +1',desc:'上限 '+bombCap+' → '+(bombCap+1)+'，并立刻补 1 枚'});
+  if(powerCap<MAX_POWER) opts.push({k:'powerCap',title:'威力上限 +1',desc:'火力上限 '+powerCap+' → '+(powerCap+1)+'，并立刻 +1 火力'});
+  if(speedCap<MAX_SPEED_LV) opts.push({k:'speedCap',title:'移速上限 +1',desc:'移速上限 '+speedCap+' → '+(speedCap+1)+'，并立刻加速一档'});
+  if(fireSoft<MAX_FIRE_SOFT) opts.push({k:'fire',title:'射速 +1',desc:'轻微加快普攻（加速手感）'});
   if(magnetLv<MAX_MAGNET_LV) opts.push({k:'magnet',title:'磁吸 +1',desc:'更容易吸到道具与奖牌'});
   if(shieldStock<MAX_SHIELD_STOCK) opts.push({k:'shield',title:'护盾 +1',desc:'抵消一次致命伤害'});
-  if(fireSoft<MAX_FIRE_SOFT) opts.push({k:'fire',title:'射速 +1',desc:'轻微加快普攻'});
   if(!opts.length) opts.push({k:'score',title:'得分补给',desc:'属性已满，改为分数奖励'});
   let pool=opts.slice().sort(()=>Math.random()-0.5).slice(0,Math.min(3,opts.length));
   const wingOpt=opts.find(o=>o.k==='wingCap');
@@ -1350,8 +1361,10 @@ function openStageBoost(done){
 function applyBoostPick(o,done){
   if(!o) o={k:'score'};
   if(o.k==='wingCap'){wingCap=Math.min(MAX_WING,wingCap+1);showBanner('僚机上限 → '+wingCap,1.4);}
-  else if(o.k==='bombCap'){bombCap=Math.min(5,bombCap+1);bombs=Math.min(bombCap,bombs+1);showBanner('炸弹上限 → '+bombCap,1.4);}
-  else if(o.k==='speed'){speedLv++;showBanner('移速 +1',1.2);}
+  else if(o.k==='bombCap'){bombCap=Math.min(8,bombCap+1);bombs=Math.min(bombCap,bombs+1);showBanner('炸弹上限 → '+bombCap,1.4);}
+  else if(o.k==='powerCap'){powerCap=Math.min(MAX_POWER,powerCap+1);power=Math.min(powerCap,power+1);showBanner('威力上限 → '+powerCap,1.4);}
+  else if(o.k==='speedCap'){speedCap=Math.min(MAX_SPEED_LV,speedCap+1);speedLv=Math.min(speedCap,speedLv+1);showBanner('移速上限 → '+speedCap,1.4);}
+  else if(o.k==='speed'){speedLv=Math.min(speedCap,speedLv+1);showBanner('移速 +1',1.2);}
   else if(o.k==='magnet'){magnetLv++;showBanner('磁吸 +1',1.2);}
   else if(o.k==='shield'){shieldStock++;showBanner('护盾 +1',1.2);}
   else if(o.k==='fire'){fireSoft++;showBanner('射速 +1',1.2);}
@@ -1615,9 +1628,7 @@ function update(dt){
         }
         if(b.hp<=0){
           addScore(b.score,false);explode(b.x,b.y,'#ffd166',50);shake=.7;flashA=.4;
-          for(let k=0;k<5;k++) dropLoot(b.x+(Math.random()-.5)*60,b.y+(Math.random()-.5)*40,2);
-          // guaranteed wing drop from boss
-          if(wingLevel<wingCap||aliveWingmen<wingLevel) items.push({type:'W',x:b.x,y:b.y,vy:40,vx:0,life:12,r:18});
+          dropLoot(b.x,b.y,2); // Boss/中型：3~5 个随机增益
           boss=null;showBanner(b.kind==='mid'?'威胁排除':'Boss 击破！',2);updateHud();flushWaves();
         }
       }
@@ -1632,7 +1643,7 @@ function update(dt){
     if(it.life<=0||it.y>H+30){items.splice(i,1);continue;}
     if(id<it.r+16||Math.hypot(it.x-player.x,it.y-player.y)<it.r+16){
       if(it.type==='P'){
-        if(power<MAX_POWER){power++;showBanner(power>=MAX_POWER?'火力 MAX':'火力 UP',.7);}
+        if(power<powerCap){power++;showBanner(power>=powerCap?'火力达上限(通关可提升)':'火力 UP',.7);}
         else{applyPOverflow();}
       }
       else if(it.type==='W'){
