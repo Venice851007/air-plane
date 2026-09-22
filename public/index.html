@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>苍穹打击者 · Sky Striker</title>
-<!-- psikyo2 -->
+<!-- curve1 -->
 <style>
 :root{--bg:#071018;--accent:#ff6b35;--accent2:#4ecdc4;--gold:#ffd166;--danger:#ef476f;--panel:rgba(7,16,24,.94);--cyan:#7ef9ff}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -246,7 +246,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-psikyo2';
+const GAME_VER='2026.09.22-curve1';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -307,6 +307,7 @@ let bannerT=0,charge=0,charging=false,fireCd=0,wingFireCd=0,bombLatch=false;
 let pauseLatch=false,shieldPulse=0,shieldR=0;
 /* Psikyo fusion run/stage stats */
 let goldFlashPerfect=0,goldFlashTotal=0,stageGoldPerfect=0,stageGoldTotal=0;
+let openerLootDone=false;
 let stageKills=0,stageSpawned=0,stageEscaped=0,stageStartT=0;
 let stageGrades=[],secretsFound=0,secret=null,activeWaves=null;
 let gradeFlashT=0,gradeFlashTxt='';
@@ -392,33 +393,33 @@ const STAGES=[
   {name:'装甲高地',theme:'tank',bossArch:'ring',waves:[
     {t:0.7,fn:()=>{scouts(5,'line');tanks(1);}},
     {t:3,fn:()=>{scouts(6,'zig');tankRing(1);}},
-    {t:6.2,fn:()=>{tanks(1);scouts(6,'line');scoutAim(2);}},
-    {t:10,fn:()=>{tanks(2);tankRing(1);scouts(5,'zig');}},
+    {t:6.2,fn:()=>{tanks(1);scoutElite(1);scouts(6,'line');scoutAim(2);}},
+    {t:10,fn:()=>{tanks(2);tankRing(1);scouts(5,'zig');scoutElite(1);}},
     {t:15,mid:1},
     {t:19,fn:()=>{miniElite('tank');scouts(6,'zig');}},
-    {t:22.5,fn:()=>{tanks(2);tankRing(2);scouts(7,'line');scoutAim(2);}},
+    {t:22.5,fn:()=>{tanks(2);tankRing(2);scoutElite(1);scouts(7,'line');scoutAim(2);}},
     {t:27,fn:()=>{tanks(3);scouts(6,'zig');scoutElite(1);}},
     {t:33.5,boss:1},
   ]},
   {name:'铁壁防线',theme:'tank',bossArch:'tank',waves:[
     {t:0.6,fn:()=>{tanks(2);scouts(5,'line');}},
     {t:2.8,fn:()=>{tankRing(1);drones(8,'swarm');}},
-    {t:5.8,fn:()=>{tanks(2);scouts(6,'zig');droneBurst(1);}},
+    {t:5.8,fn:()=>{tanks(2);droneElite(1);scouts(6,'zig');droneBurst(1);}},
     {t:9.5,fn:()=>{tanks(2);tankRing(2);scouts(5,'line');scoutElite(1);}},
     {t:14.5,mid:1},
     {t:18.5,fn:()=>{miniElite('tank');drones(8,'swarm');}},
-    {t:22,fn:()=>{tanks(3);tankRing(2);scouts(6,'zig');droneBurst(2);}},
+    {t:22,fn:()=>{tanks(3);tankRing(2);droneElite(1);scouts(6,'zig');droneBurst(2);}},
     {t:26.5,fn:()=>{tanks(3);scoutElite(2);scouts(6,'line');}},
     {t:33,boss:1},
   ]},
   {name:'重装要塞',theme:'tank',bossArch:'sniper',waves:[
     {t:0.5,fn:()=>{tanks(2);tankRing(1);scouts(5,'zig');}},
     {t:2.6,fn:()=>{tanks(2);drones(10,'v');snipers(1);}},
-    {t:5.5,fn:()=>{tanks(3);tankRing(1);scouts(6,'line');}},
+    {t:5.5,fn:()=>{tanks(3);tankRing(1);scoutElite(1);scouts(6,'line');}},
     {t:9.2,fn:()=>{tanks(2);tankRing(2);scoutElite(1);snipers(2);}},
     {t:14,mid:1},
     {t:18,fn:()=>{miniElite('tank');scouts(6,'zig');drones(8,'swarm');}},
-    {t:21.5,fn:()=>{tanks(3);tankRing(2);droneBurst(2);sniperElite(1);}},
+    {t:21.5,fn:()=>{tanks(3);tankRing(2);droneElite(1);droneBurst(2);sniperElite(1);}},
     {t:26,fn:()=>{tanks(4);scoutElite(2);scouts(5,'line');snipers(2);}},
     {t:32,boss:1},
   ]},
@@ -672,7 +673,7 @@ function resetRun(){
   speedLv=0;speedCap=BASE_SPEED_CAP;powerCap=BASE_POWER_CAP;fireSoft=0;magnetLv=0;shieldStock=0;
   extendIdx=0;combo=0;comboT=0;stage=1;cycle=1;stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;
   pBullets=[];eBullets=[];enemies=[];parts=[];items=[];medals=[];beams=[];shieldPulse=0;shieldR=0;
-  goldFlashPerfect=0;goldFlashTotal=0;stageGrades=[];secretsFound=0;secret=null;activeWaves=null;gradeFlashT=0;gradeFlashTxt='';
+  goldFlashPerfect=0;goldFlashTotal=0;stageGrades=[];secretsFound=0;secret=null;activeWaves=null;gradeFlashT=0;gradeFlashTxt='';openerLootDone=false;
   player.x=W/2;player.y=H-100;charge=0;charging=false;fireCd=0;wingFireCd=0;
   invUntil=0;flashA=0;shake=0;rebuildWingmen(false);updateHud();
   prepareStageWaves();resetStageStats();spawnStageSecret();
@@ -787,21 +788,32 @@ function dropLoot(x,y,kind){
     medal(3+((Math.random()*2)|0),70);
     return;
   }
-  // Boss：3~5，前3个保底，其中至少1个P或W
+  // Boss：3~5，前3个保底，其中至少1个P或W；错开生成避免叠堆
   const bag=[pickPW(), pickNeed(true), pickNeed(true)];
   // 再随机 0~2
   const extra=(Math.random()*3)|0;
   for(let i=0;i<extra;i++) bag.push(pickNeed(false));
   for(let i=0;i<bag.length;i++){
     const ang=-Math.PI/2+(i-(bag.length-1)/2)*0.45;
-    pushIt(bag[i],Math.cos(ang)*36,Math.sin(ang)*22);
+    const ox=Math.cos(ang)*36+(i-(bag.length-1)/2)*14;
+    const oy=Math.sin(ang)*22;
+    items.push({
+      type:bag[i],
+      x:x+ox+(Math.random()-.5)*10,
+      y:y+oy+(Math.random()-.5)*8,
+      vy:42+i*10+Math.random()*12,
+      vx:(Math.random()-.5)*55+(i-(bag.length-1)/2)*12,
+      life:11+i*0.4,
+      delay:i*0.16,
+      r:18
+    });
   }
   medal(4+((Math.random()*3)|0),90);
 }
 
 
 function mkEnemy(o){
-  const m=cMult();
+  const m=cMult()*armorStageSoft();
   if(o.hp){o.hp=Math.max(1,Math.ceil(o.hp*m));o.maxHp=o.hp;}
   if(o.score) o.score=Math.floor(o.score*(1+(cycle-1)*0.1));
   if(o.spd) o.spd*=(1+Math.min(0.25,cycleTier()*0.05));
@@ -958,12 +970,16 @@ function stageArch(){
   const st=STAGES[stage-1];
   return (st&&st.bossArch)||'ring';
 }
+function armorStageSoft(){
+  // S7–S9 tank theme: less tanky while keeping bullet pressure
+  return (stage>=7&&stage<=9)?0.90:1;
+}
 function bossHpMult(){
   // +40% early → +80% late vs prior baseline
-  return 1.4 + (stage-1)/14*0.4;
+  return (1.4 + (stage-1)/14*0.4)*armorStageSoft();
 }
 function midHpMult(){
-  return 1.4 + (stage-1)/14*0.3; // +40% → +70%
+  return (1.4 + (stage-1)/14*0.3)*armorStageSoft(); // +40% → +70%, soft on armor stages
 }
 
 function spawnMid(){
@@ -1559,7 +1575,7 @@ function hitBossPods(pb){
       if(pod.hp<=0){
         pod.alive=false;boss.gunLoss=(boss.gunLoss||0)+1;
         addScore(800+stage*100,false);explode(px,py,'#ff6b35',22);
-        dropLoot(px,py,1);
+        dropLoot(px,py,0); // pods: gold medals only (no P/B/W)
         showBanner('部位破坏！炮口减弱',1.2);
       }
       return true;
@@ -1659,11 +1675,15 @@ function nextStage(){
       stage=1;
       const bonus=Math.floor(8000*cleared*(1+cleared*0.15));
       score+=bonus;
+      // 轮回补给：小补给 + 短暂无敌
+      bombs=Math.min(bombCap,bombs+1);
+      if(power<powerCap) power++;
+      if(wingLevel===0){wingLevel=1;aliveWingmen=1;rebuildWingmen(false);}
+      else if(aliveWingmen<wingLevel){aliveWingmen++;rebuildWingmen(false);}
       stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;enemies=[];eBullets=[];pBullets=[];beams=[];
-      invUntil=Math.max(invUntil,performance.now()+1800);
+      invUntil=Math.max(invUntil,performance.now()+2200);
       prepareStageWaves();resetStageStats();spawnStageSecret();
-      if(cycle===2) showBanner('⚠ 二周目压迫开启 · 尸弹与弹速↑  +'+bonus,3.4);
-      else showBanner('第'+cleared+'轮回通关！→ 第'+cycle+'轮回  +'+bonus,3.2);
+      showBanner('轮回补给 · 第'+cycle+'轮回 +'+bonus,3.2);
       state='play';
       if(els.hud) els.hud.style.display='block';
       if(els.touch) els.touch.style.display='block';
@@ -1703,6 +1723,15 @@ function update(dt){
   if(state!=='play') return;
 
   stageT+=dt;
+  // Opening teaching drop (~22s, once per run) — do not stack with secret
+  if(!openerLootDone&&stage===1&&cycle===1&&stageT>=22){
+    openerLootDone=true;
+    const typ=(wingLevel===0)?'W':'P';
+    const ix=Math.max(30,Math.min(W-30,player.x));
+    const iy=Math.max(50,player.y-100);
+    items.push({type:typ,x:ix,y:iy,vy:28,vx:0,life:12,r:18});
+    showBanner('补给抵达',1.8);
+  }
   flushWaves();
   const script=activeWaves||STAGES[stage-1];
   if(bossSpawned&&!boss&&enemies.length===0&&eBullets.length<8&&stageT>script.waves[script.waves.length-1].t+1.2){
@@ -1937,7 +1966,14 @@ function update(dt){
 
   const magR=95+magnetLv*38;
   for(let i=items.length-1;i>=0;i--){
-    const it=items[i];it.life-=dt;it.vy+=40*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;it.vx*=.98;
+    const it=items[i];
+    if(it.delay&&it.delay>0){
+      it.delay-=dt;
+      it.vy+=20*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;it.vx*=.98;
+      if(it.y>H+30){items.splice(i,1);}
+      continue;
+    }
+    it.life-=dt;it.vy+=40*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;it.vx*=.98;
     const id=Math.hypot(it.x-player.x,it.y-player.y);
     if(id<magR){it.x+=(player.x-it.x)*4.2*dt;it.y+=(player.y-it.y)*4.2*dt;}
     if(it.life<=0||it.y>H+30){items.splice(i,1);continue;}
@@ -1960,8 +1996,11 @@ function update(dt){
     const m=medals[i];m.life-=dt;m.x+=m.vx*dt;m.y+=m.vy*dt;m.vx*=.97;
     if(m.gold){m.flash=(m.flash||0)+dt*2.4;} // cycle brightness
     const d=Math.hypot(m.x-player.x,m.y-player.y);
-    const mr=130+magnetLv*40;
-    if(d<mr){m.x+=(player.x-m.x)*(5+magnetLv*0.4)*dt;m.y+=(player.y-m.y)*(5+magnetLv*0.4)*dt;}
+    // Psikyo feel: flashing gold never auto-sucked by magnet
+    if(!m.gold){
+      const mr=130+magnetLv*40;
+      if(d<mr){m.x+=(player.x-m.x)*(5+magnetLv*0.4)*dt;m.y+=(player.y-m.y)*(5+magnetLv*0.4)*dt;}
+    }
     if(d<36){
       let val=m.val||100;
       let perfect=false;
