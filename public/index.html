@@ -246,7 +246,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-tough1';
+const GAME_VER='2026.09.22-read1';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -276,25 +276,25 @@ const SHIPS=[
    chargeSkill:'超射·追迹导弹雨：Boss/精英杀手。僚机越多导弹越密越狠（无僚仍可弱放）。',
    wingSkill:'僚机既是火力也是蓄力燃料——无僚也能放，有僚才像打击者。',
    speed:340,fireRate:0.14,bombStock:2,pattern:'focus',chargeTime:0.9,wingStyle:'focus',
-   chargeLock:0,chargeId:'homing'},
+   chargeLock:0,chargeId:'homing',bombId:'strike'},
   {id:'fenghuang',name:'凤凰羽',color:'#ff6b35',wing:'#ffd166',
    blurb:'彩京风广角机。蓄力时僚机扇开；松手烈焰地毯。停射换爆发，打群怪。',
    chargeSkill:'超射·烈焰地毯：广域消弹+子母弹+灼烧。清场控场专精（无僚仍可弱放）。',
    wingSkill:'僚机环绕侧射；蓄力时改扇阵。拾取「僚」强化。',
    speed:400,fireRate:0.16,bombStock:1,pattern:'spread',chargeTime:0.85,wingStyle:'orbit',
-   chargeLock:0,chargeId:'flame'},
+   chargeLock:0,chargeId:'flame',bombId:'napalm'},
   {id:'tiewei',name:'铁卫舰',color:'#a8b2ff',wing:'#6c7ae0',
    blurb:'彩京风重甲。蓄力僚机前顶成盾墙（可消弹），松手铁壁冲击。',
    chargeSkill:'超射·铁壁：蓄力前盾消弹；松手大清弹+无敌窗+重穿甲冲击（生存专精）。',
    wingSkill:'僚机厚重；蓄力前聚成盾。移速大降换生存。',
    speed:260,fireRate:0.18,bombStock:2,pattern:'laser',chargeTime:1.1,wingStyle:'tank',
-   chargeLock:0.38,chargeId:'shield'},
+   chargeLock:0.38,chargeId:'shield',bombId:'bastion'},
   {id:'yingren',name:'影刃',color:'#c77dff',wing:'#9b5de5',
    blurb:'彩京风极速机。蓄力快，僚机排成刃列；松手宽幅贯穿激光。',
    chargeSkill:'超射·贯穿影刃：厚激光/多束穿甲，Boss破甲特化（僚越多束越粗越久）。',
    wingSkill:'僚机贴身细束；蓄力时横排。拾取「僚」强化。',
    speed:440,fireRate:0.11,bombStock:1,pattern:'twin',chargeTime:0.7,wingStyle:'razor',
-   chargeLock:0,chargeId:'beam'},
+   chargeLock:0,chargeId:'beam',bombId:'pierce'},
 ];
 
 let selectedShip=0,W=0,H=0,dpr=1;
@@ -502,7 +502,7 @@ function cSpd(){return 1+Math.min(0.55,cycleTier()*0.16);} // bullet speed ~+16%
 function cPat(){return Math.min(3, 1+((cycleTier()*0.65)|0));} // extra pattern richness 1..3
 function deathBulletChance(){ // Psikyo corpse bullets loop2+
   if(cycle<2) return 0;
-  return Math.min(0.55, 0.22+(cycle-2)*0.08);
+  return Math.min(0.42, 0.16+(cycle-2)*0.07);
 }
 function stageBannerText(){
   const nm=STAGES[stage-1].name;
@@ -834,12 +834,13 @@ function spawnN(base){
 function noteSpawn(n){stageSpawned+=(n|0);}
 function spawnDeathBullets(x,y,kind){
   if(cycle<2) return;
-  const ch=deathBulletChance()*(kind>=1?1.15:1);
+  const ch=deathBulletChance()*(kind>=1?1.05:0.85);
   if(Math.random()>ch) return;
-  const n=2+((Math.random()*4)|0); // 2..5
-  const spd=70+stage*4+Math.min(40,cycle*6);
+  const n=2+((Math.random()*2)|0); // 2..3 — fewer, readable
+  const spd=65+stage*3+Math.min(32,cycle*5);
   for(let i=0;i<n;i++){
-    const ang=(Math.PI*2*i)/n+(Math.random()*0.4);
+    // Prefer outward/downish (π/2 = down); avoid dense feet-spray upward
+    const ang=Math.PI/2+(Math.random()-0.5)*1.55+(i-(n-1)/2)*0.35;
     eShot(x,y,Math.cos(ang)*spd,Math.sin(ang)*spd,3);
   }
 }
@@ -1017,14 +1018,20 @@ function spawnBoss(){
 }
 
 function aim(x,y,spd){const dx=player.x-x,dy=player.y-y,d=Math.hypot(dx,dy)||1;return{vx:dx/d*spd,vy:dy/d*spd};}
+/** Cap hard aimed volley speeds for readability (~185–200). Rings stay slower. */
+function aimCap(spd){return Math.min(200, Math.max(80, spd));}
+function countAimedOrDense(){return eBullets.length>120;}
 function eShot(x,y,vx,vy,r){
   if(eBullets.length>=MAX_EBUL) return;
   const m=cSpd();
-  eBullets.push({x,y,vx:vx*m,vy:vy*m,r:Math.max((r||4)*1.4,5.5),color:'#ff2bd6'});
+  eBullets.push({x,y,vx:vx*m,vy:vy*m,r:Math.max((r||4)*1.15,4.2),color:'#ff2bd6'});
 }
 /** Ring with intentional gaps (safe corridors). gapCount wedges skipped. */
 function eRing(x,y,n,spd,r,rot,gapCount){
-  const gaps=Math.max(1,gapCount|0);
+  let gaps=Math.max(1,gapCount|0);
+  if(enemies.length>8) gaps++;
+  if(enemies.length>14) gaps++;
+  gaps=Math.min(gaps, Math.max(2, (n/3)|0)); // more enemies → more corridors, capped
   const skip=new Set();
   // evenly spaced gap wedges so lanes stay readable
   for(let g=0;g<gaps;g++) skip.add(((g*n/gaps)+((rot*3)|0))%n|0);
@@ -1038,7 +1045,7 @@ function eRing(x,y,n,spd,r,rot,gapCount){
 
 function enemyFire(e){
   if(e.type==='weaver'){
-    if(e.cd<=0){const a=aim(e.x,e.y,95+stage*6);eShot(e.x,e.y+8,a.vx,a.vy,3);e.cd=1.55+Math.random()*0.35;}
+    if(e.cd<=0){const a=aim(e.x,e.y,aimCap(95+stage*6));eShot(e.x,e.y+8,a.vx,a.vy,3);e.cd=(1.55+Math.random()*0.35)*(countAimedOrDense()?1.3:1);}
     return;
   }
   if(e.type==='fan'||e.fan){
@@ -1048,20 +1055,20 @@ function enemyFire(e){
   if(e.type==='delay'||e.delayShot){
     if(e.cd<=0){
       if(!e.winding){e.winding=true;e.tell=.55;e.cd=.55;}
-      else{e.winding=false;const a=aim(e.x,e.y,140+stage*7);eShot(e.x,e.y+10,a.vx,a.vy,4.5);e.cd=2.1;}
+      else{e.winding=false;const a=aim(e.x,e.y,aimCap(140+stage*7));eShot(e.x,e.y+10,a.vx,a.vy,4.5);e.cd=2.1*(countAimedOrDense()?1.25:1);}
     }
     return;
   }
 
   if(e.family==='scout'){
-    if(e.type==='fodder'){if(Math.random()<0.5){const a=aim(e.x,e.y,100+stage*7);eShot(e.x,e.y+8,a.vx,a.vy,3);}}
-    else if(e.type==='aimed'){const a=aim(e.x,e.y,115+stage*9);eShot(e.x,e.y+8,a.vx,a.vy,4);}
-    else{const a=aim(e.x,e.y,98+stage*8);eShot(e.x-8,e.y+8,a.vx,a.vy,4);eShot(e.x+8,e.y+8,a.vx,a.vy,4);}
+    if(e.type==='fodder'){if(eBullets.length>140&&Math.random()<0.5){/* skip under dense pressure */}else if(Math.random()<0.5){const a=aim(e.x,e.y,aimCap(100+stage*7));eShot(e.x,e.y+8,a.vx,a.vy,3);}}
+    else if(e.type==='aimed'){const a=aim(e.x,e.y,aimCap(115+stage*9));eShot(e.x,e.y+8,a.vx,a.vy,4);}
+    else{const a=aim(e.x,e.y,aimCap(98+stage*8));eShot(e.x-8,e.y+8,a.vx,a.vy,4);eShot(e.x+8,e.y+8,a.vx,a.vy,4);}
   }else if(e.family==='drone'){
-    if(e.burst&&e.burst>1){for(let i=0;i<(e.burst|0);i++){const a=aim(e.x,e.y,120+stage*10);const ang=Math.atan2(a.vy,a.vx)+(i-(e.burst-1)/2)*.18;eShot(e.x,e.y+6,Math.cos(ang)*145,Math.sin(ang)*145,3);}}
-    else{const a=aim(e.x,e.y,128+stage*10);eShot(e.x,e.y+6,a.vx,a.vy,3);}
+    if(e.burst&&e.burst>1){for(let i=0;i<(e.burst|0);i++){const a=aim(e.x,e.y,aimCap(120+stage*10));const ang=Math.atan2(a.vy,a.vx)+(i-(e.burst-1)/2)*.18;const sp=aimCap(145);eShot(e.x,e.y+6,Math.cos(ang)*sp,Math.sin(ang)*sp,3);}}
+    else{const a=aim(e.x,e.y,aimCap(128+stage*10));eShot(e.x,e.y+6,a.vx,a.vy,3);}
   }else if(e.family==='tank'){
-    const a=aim(e.x,e.y,120+stage*12);
+    const a=aim(e.x,e.y,aimCap(120+stage*12));
     eShot(e.x-12,e.y+10,a.vx,a.vy,5);eShot(e.x+12,e.y+10,a.vx,a.vy,5);
     if(e.ring||Math.random()<0.35){
       const n=8+Math.min(4,cPat()); // denser rings, still gapped
@@ -1077,10 +1084,10 @@ function enemyFire(e){
     }
   }else{
     // fallback / mix leftovers
-    if(e.type==='fodder'){if(Math.random()<0.45){const a=aim(e.x,e.y,110+stage*9);eShot(e.x,e.y+8,a.vx,a.vy,3);}}
-    else if(e.type==='aimed'){const a=aim(e.x,e.y,122+stage*11);eShot(e.x,e.y+8,a.vx,a.vy,4);}
+    if(e.type==='fodder'){if(eBullets.length>140&&Math.random()<0.5){}else if(Math.random()<0.45){const a=aim(e.x,e.y,aimCap(110+stage*9));eShot(e.x,e.y+8,a.vx,a.vy,3);}}
+    else if(e.type==='aimed'){const a=aim(e.x,e.y,aimCap(122+stage*11));eShot(e.x,e.y+8,a.vx,a.vy,4);}
     else if(e.type==='spread'){for(let i=-2;i<=2;i++) eShot(e.x,e.y+8,i*50,155+stage*12,3.5);}
-    else{const a=aim(e.x,e.y,105+stage*9);eShot(e.x-10,e.y+8,a.vx,a.vy,4);eShot(e.x+10,e.y+8,a.vx,a.vy,4);}
+    else{const a=aim(e.x,e.y,aimCap(105+stage*9));eShot(e.x-10,e.y+8,a.vx,a.vy,4);eShot(e.x+10,e.y+8,a.vx,a.vy,4);}
   }
 }
 
@@ -1097,7 +1104,7 @@ function bossFire(b){
     if(arch==='ring'){
       if(b.cd<=0){eRing(b.x,b.y,10+pat,95,3.5,b.t,2);if(ph>1){const a=aim(b.x,b.y,150);eShot(b.x,b.y+18,a.vx,a.vy,5);}b.cd=0.85*cFire();b.tell=.35;}
     }else if(arch==='sniper'){
-      if(b.cd<=0){b.tell=.55;const a=aim(b.x,b.y,240);eShot(b.x,b.y+22,a.vx,a.vy,5);eShot(b.x-14,b.y+18,a.vx*.95,a.vy,4);eShot(b.x+14,b.y+18,a.vx*.95,a.vy,4);if(pat>=2){eShot(b.x-28,b.y+14,a.vx*.9,a.vy,3.5);eShot(b.x+28,b.y+14,a.vx*.9,a.vy,3.5);}b.cd=1.05*cFire();}
+      if(b.cd<=0){b.tell=.55;const a=aim(b.x,b.y,195);eShot(b.x,b.y+22,a.vx,a.vy,5);eShot(b.x-14,b.y+18,a.vx*.95,a.vy,4);eShot(b.x+14,b.y+18,a.vx*.95,a.vy,4);if(pat>=2){eShot(b.x-28,b.y+14,a.vx*.9,a.vy,3.5);eShot(b.x+28,b.y+14,a.vx*.9,a.vy,3.5);}b.cd=1.05*cFire();}
     }else if(arch==='tank'){
       if(b.cd<=0){eRing(b.x,b.y,10+pat*2,100,4,b.t,2);const a=aim(b.x,b.y,140);eShot(b.x,b.y+20,a.vx,a.vy,6);b.cd=0.95*cFire();b.tell=.4;}
     }else if(arch==='swarm'){
@@ -1105,7 +1112,7 @@ function bossFire(b){
     }else if(arch==='laser'){
       if(b.cd<=0){b.tell=.5;b.sweepAng=(b.sweepAng||0)+0.55;const base=b.sweepAng;for(let k=-2;k<=2;k++){if(k===0&&pat<2)continue;const ang=base+k*0.22;eShot(b.x,b.y+20,Math.cos(ang)*180,Math.sin(ang)*180+40,4);}b.cd=0.7*cFire();}
     }else if(arch==='dasher'){
-      if(b.cd<=0){const a=aim(b.x,b.y,190);for(let k=-1-Math.min(1,pat-1);k<=1+Math.min(1,pat-1);k++){const ang=Math.atan2(a.vy,a.vx)+k*.2;eShot(b.x,b.y+16,Math.cos(ang)*190,Math.sin(ang)*190,4);}b.cd=0.55*cFire();b.tell=.25;b.dashT=.35;}
+      if(b.cd<=0){const a=aim(b.x,b.y,185);for(let k=-1-Math.min(1,pat-1);k<=1+Math.min(1,pat-1);k++){const ang=Math.atan2(a.vy,a.vx)+k*.2;eShot(b.x,b.y+16,Math.cos(ang)*185,Math.sin(ang)*185,4);}b.cd=0.55*cFire();b.tell=.25;b.dashT=.35;}
     }else{ // finale mid
       if(ph===1){if(b.cd<=0){const a=aim(b.x,b.y,155);eShot(b.x,b.y+22,a.vx,a.vy,5);b.cd=0.5*cFire();b.tell=.3;}}
       else if(b.cd<=0){for(let i=-3-pat;i<=3+pat;i++){if(i===0)continue;eShot(b.x,b.y+20,i*42,145,4);}b.cd=0.85*cFire();b.tell=.4;}
@@ -1118,7 +1125,7 @@ function bossFire(b){
     else if(ph===2&&b.cd<=0){eRing(b.x,b.y,14+pat*2,105,3.5,b.t*1.8,2);const a=aim(b.x,b.y,160);eShot(b.x,b.y+22,a.vx,a.vy,5);b.cd=0.7*cFire();b.tell=.3;}
     else if(ph>=3&&b.cd<=0){eRing(b.x,b.y,16+pat*2,110,3.5,b.t*2.2,3);eRing(b.x,b.y,10+pat,80,3,b.t*-1.5,2);b.cd=0.55*cFire();b.tell=.3;}
   }else if(arch==='sniper'){
-    if(b.cd<=0){b.tell=.6;const a=aim(b.x,b.y,210);const spread=1+Math.min(2,ph-1)+Math.min(1,pat-1);for(let k=-spread;k<=spread;k++){const ang=Math.atan2(a.vy,a.vx)+k*.13;eShot(b.x,b.y+26,Math.cos(ang)*(200+ph*10),Math.sin(ang)*(200+ph*10),5);}if(ph>=2){for(let i=-3-pat;i<=3+pat;i++){if(i===0)continue;eShot(b.x,b.y+16,i*30,125,3);}}b.cd=(ph>=3?0.55:0.9)*cFire();}
+    if(b.cd<=0){b.tell=.6;const a=aim(b.x,b.y,190);const spread=1+Math.min(2,ph-1)+Math.min(1,pat-1);for(let k=-spread;k<=spread;k++){const ang=Math.atan2(a.vy,a.vx)+k*.13;const sp=aimCap(185+ph*4);eShot(b.x,b.y+26,Math.cos(ang)*sp,Math.sin(ang)*sp,5);}if(ph>=2){for(let i=-3-pat;i<=3+pat;i++){if(i===0)continue;eShot(b.x,b.y+16,i*30,125,3);}}b.cd=(ph>=3?0.55:0.9)*cFire();}
   }else if(arch==='tank'){
     if(b.cd<=0){eRing(b.x,b.y,12+pat*2,90,4.5,b.t*1.1,2);const a=aim(b.x,b.y,150);eShot(b.x-22,b.y+24,a.vx,a.vy,7);eShot(b.x+22,b.y+24,a.vx,a.vy,7);if(ph>=3){eShot(b.x,b.y+28,a.vx,a.vy,8);eRing(b.x,b.y,8+pat,70,3.5,b.t*-1,1);}b.cd=(ph>=3?0.6:0.85)*cFire();b.tell=.45;}
   }else if(arch==='swarm'){
@@ -1127,14 +1134,14 @@ function bossFire(b){
     if(b.cd<=0){b.tell=.55;b.sweepAng=(b.sweepAng|| -Math.PI*.2)+0.35+ph*0.05;const base=b.sweepAng;const lanes=4+pat;for(let i=0;i<lanes;i++){const ang=base+i*(Math.PI*0.9/(lanes-1))-Math.PI*.45; // fan sweep with gaps via skip
       if(i===((lanes/2)|0)) continue; // center safe lane
       eShot(b.x,b.y+22,Math.cos(ang)*(170+ph*15),Math.sin(ang)*(170+ph*15)+20,4.5);}
-      if(ph>=3){const a=aim(b.x,b.y,220);eShot(b.x,b.y+26,a.vx,a.vy,6);}b.cd=(ph>=3?0.5:0.72)*cFire();}
+      if(ph>=3){const a=aim(b.x,b.y,195);eShot(b.x,b.y+26,a.vx,a.vy,6);}b.cd=(ph>=3?0.5:0.72)*cFire();}
   }else if(arch==='dasher'){
-    if(b.cd<=0){b.dashT=.4;const a=aim(b.x,b.y,200);for(let k=-2-Math.min(1,pat-1);k<=2+Math.min(1,pat-1);k++){if(k===0&&pat>=2)continue;const ang=Math.atan2(a.vy,a.vx)+k*.16;eShot(b.x,b.y+16,Math.cos(ang)*(195+ph*8),Math.sin(ang)*(195+ph*8),4);}if(ph>=3){for(let i=-4;i<=4;i++){if(i===0)continue;eShot(b.x,b.y+12,i*28,140,3);}}b.cd=(ph>=3?0.4:0.58)*cFire();b.tell=.22;}
+    if(b.cd<=0){b.dashT=.4;const a=aim(b.x,b.y,190);for(let k=-2-Math.min(1,pat-1);k<=2+Math.min(1,pat-1);k++){if(k===0&&pat>=2)continue;const ang=Math.atan2(a.vy,a.vx)+k*.16;const sp=aimCap(185+ph*4);eShot(b.x,b.y+16,Math.cos(ang)*sp,Math.sin(ang)*sp,4);}if(ph>=3){for(let i=-4;i<=4;i++){if(i===0)continue;eShot(b.x,b.y+12,i*28,140,3);}}b.cd=(ph>=3?0.4:0.58)*cFire();b.tell=.22;}
   }else{ // finale / mix hybrid — rotate patterns by phase
     if(ph===1&&b.cd<=0){eRing(b.x,b.y,12+pat,100,3.5,b.t*1.5,2);b.cd=0.85*cFire();b.tell=.35;}
-    else if(ph===2&&b.cd<=0){b.tell=.5;const a=aim(b.x,b.y,230);for(let k=-2;k<=2;k++){const ang=Math.atan2(a.vy,a.vx)+k*.14;eShot(b.x,b.y+24,Math.cos(ang)*230,Math.sin(ang)*230,5);}for(let i=-4-pat;i<=4+pat;i++){if(i===0)continue;eShot(b.x,b.y+14,i*28,130,3);}b.cd=0.65*cFire();}
+    else if(ph===2&&b.cd<=0){b.tell=.5;const a=aim(b.x,b.y,195);for(let k=-2;k<=2;k++){const ang=Math.atan2(a.vy,a.vx)+k*.14;eShot(b.x,b.y+24,Math.cos(ang)*195,Math.sin(ang)*195,5);}for(let i=-4-pat;i<=4+pat;i++){if(i===0)continue;eShot(b.x,b.y+14,i*28,130,3);}b.cd=0.65*cFire();}
     else if(ph===3&&b.cd<=0){b.sweepAng=(b.sweepAng||0)+0.4;const base=b.sweepAng;for(let i=0;i<7+pat;i++){if(i===3)continue;const ang=base+i*(Math.PI/(6+pat))-Math.PI*.5;eShot(b.x,b.y+20,Math.cos(ang)*175,Math.sin(ang)*175+25,4);}b.cd=0.55*cFire();b.tell=.35;}
-    else if(ph>=4&&b.cd<=0){eRing(b.x,b.y,14+pat*2,110,3.5,b.t*2.4,3);const a=aim(b.x,b.y,210);eShot(b.x,b.y+26,a.vx,a.vy,6);for(let k=-2;k<=2;k++){if(k===0)continue;const ang=Math.atan2(a.vy,a.vx)+k*.2;eShot(b.x,b.y+20,Math.cos(ang)*190,Math.sin(ang)*190,4);}b.cd=0.45*cFire();b.tell=.3;}
+    else if(ph>=4&&b.cd<=0){eRing(b.x,b.y,14+pat*2,110,3.5,b.t*2.4,3);const a=aim(b.x,b.y,190);eShot(b.x,b.y+26,a.vx,a.vy,6);for(let k=-2;k<=2;k++){if(k===0)continue;const ang=Math.atan2(a.vy,a.vx)+k*.2;eShot(b.x,b.y+20,Math.cos(ang)*185,Math.sin(ang)*185,4);}b.cd=0.45*cFire();b.tell=.3;}
   }
 }
 
@@ -1348,11 +1355,71 @@ function fireWingmenHyper(scale){
 
 function doBomb(){
   if(bombs<=0||state!=='play') return;
-  bombs--;updateHud();shake=.55;flashA=.5;eBullets=[];
-  for(const e of enemies){e.hp-=8+power*1.2;explode(e.x,e.y,player.ship.color,10);}
-  if(boss){boss.hp-=22+power*3;boss.flash=.3;explode(boss.x,boss.y,'#ffd166',28);}
-  for(let i=0;i<42;i++){const ang=Math.random()*Math.PI*2,sp=90+Math.random()*240;parts.push({x:player.x,y:player.y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:.55+Math.random()*.4,max:1,r:3+Math.random()*5,color:player.ship.color});}
-  invUntil=Math.max(invUntil,performance.now()+1100);showBanner('炸弹！',.7);
+  bombs--;updateHud();shake=.55;flashA=.5;
+  const s=player.ship, bid=s.bombId||'strike', now=performance.now();
+  if(bid==='strike'){
+    // 迅雷：前方锥/前半场高伤，短距前清弹，无敌 ~0.7s
+    invUntil=Math.max(invUntil,now+700);
+    for(let i=eBullets.length-1;i>=0;i--){
+      const b=eBullets[i];
+      if(b.y<=player.y+8&&Math.abs(b.x-player.x)<90&&b.y>player.y-160) eBullets.splice(i,1);
+    }
+    for(const e of enemies){
+      if(e.y<player.y+30&&Math.abs(e.x-player.x)<W*0.42){e.hp-=14+power*2.2;explode(e.x,e.y,s.color,12);}
+    }
+    if(boss&&boss.y<player.y+50){boss.hp-=34+power*4.8;boss.flash=.35;explode(boss.x,boss.y,'#4ecdc4',30);}
+    for(let i=0;i<38;i++){
+      const ang=-Math.PI/2+(Math.random()-0.5)*1.05,sp=130+Math.random()*260;
+      parts.push({x:player.x,y:player.y-8,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:.4+Math.random()*.35,max:1,r:2+Math.random()*4,color:i%2?s.color:'#9bf6ff'});
+    }
+    showBanner('迅雷打击！',.75);
+  }else if(bid==='napalm'){
+    // 凤凰：广域清全弹+中伤+灼烧带，无敌 ~0.9s
+    invUntil=Math.max(invUntil,now+900);
+    eBullets=[];
+    for(const e of enemies){e.hp-=6+power*1.05;explode(e.x,e.y,s.color,8);}
+    if(boss){boss.hp-=16+power*2.6;boss.flash=.3;explode(boss.x,boss.y,'#ffd166',22);}
+    for(let k=0;k<9;k++){
+      parts.push({x:player.x+(Math.random()-0.5)*W*0.72,y:player.y-30-Math.random()*H*0.58,vx:(Math.random()-0.5)*18,vy:14+Math.random()*16,life:2.1,max:2.1,r:20+Math.random()*12,color:'#ff6b35',burn:1,burnDmg:0.55+power*0.11});
+    }
+    for(let i=0;i<40;i++){
+      const ang=Math.random()*Math.PI*2,sp=70+Math.random()*210;
+      parts.push({x:player.x,y:player.y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:.5+Math.random()*.4,max:1,r:3+Math.random()*6,color:i%3?'#ff6b35':'#ffd166'});
+    }
+    showBanner('烈焰焚弹！',.8);
+  }else if(bid==='bastion'){
+    // 铁卫：长无敌 ~1.6s + 近清弹，低伤，短盾脉冲
+    invUntil=Math.max(invUntil,now+1600);
+    shieldPulse=Math.max(shieldPulse,0.75);shieldR=Math.max(shieldR||0,100);
+    for(let i=eBullets.length-1;i>=0;i--){
+      if(Math.hypot(eBullets[i].x-player.x,eBullets[i].y-player.y)<125) eBullets.splice(i,1);
+    }
+    for(const e of enemies){
+      if(Math.hypot(e.x-player.x,e.y-player.y)<145){e.hp-=5+power*0.85;explode(e.x,e.y,'#a8b2ff',6);}
+    }
+    if(boss&&Math.hypot(boss.x-player.x,boss.y-player.y)<170){boss.hp-=12+power*2;boss.flash=.25;}
+    for(let i=0;i<30;i++){
+      const ang=i*(Math.PI*2/30);
+      parts.push({x:player.x+Math.cos(ang)*36,y:player.y+Math.sin(ang)*36,vx:Math.cos(ang)*110,vy:Math.sin(ang)*110,life:.55,max:.55,r:4,color:i%2?'#a8b2ff':'#e8ecff'});
+    }
+    showBanner('铁壁壁垒！',.85);
+  }else{
+    // 影刃：纵向走廊清弹 + 高伤贯穿柱，无敌 ~0.8s
+    invUntil=Math.max(invUntil,now+800);
+    const halfW=38;
+    for(let i=eBullets.length-1;i>=0;i--){
+      if(Math.abs(eBullets[i].x-player.x)<halfW+12) eBullets.splice(i,1);
+    }
+    for(const e of enemies){
+      if(Math.abs(e.x-player.x)<halfW+e.w*0.45){e.hp-=16+power*2.6;explode(e.x,e.y,s.color,10);}
+    }
+    if(boss&&Math.abs(boss.x-player.x)<halfW+55){boss.hp-=38+power*5.2;boss.flash=.35;explode(boss.x,boss.y,'#c77dff',28);}
+    for(let i=0;i<50;i++){
+      parts.push({x:player.x+(Math.random()-0.5)*halfW,y:H*Math.random(),vx:(Math.random()-0.5)*30,vy:-50-Math.random()*140,life:.35+Math.random()*.35,max:1,r:2+Math.random()*3,color:i%2?s.color:'#e0aaff'});
+    }
+    for(let i=0;i<7;i++) pushP({x:player.x+(i-3)*5,y:player.y-12,vx:0,vy:-820,r:5.5,dmg:3.2+power*0.65,color:'#e0aaff',hyper:1,pierce:14});
+    showBanner('影刃贯通！',.75);
+  }
 }
 
 function explode(x,y,color,n){
@@ -1895,7 +1962,7 @@ function update(dt){
     if(e.tell>0){
       e.tell-=dt;
       if(e.tell<=0&&e._pendingShot){
-        const a=aim(e.x,e.y,e.laser||e.type==='elite'?280+stage*30:220+stage*25);
+        const a=aim(e.x,e.y,aimCap(e.laser||e.type==='elite'?190+stage*3:180+stage*2));
         eShot(e.x,e.y+10,a.vx,a.vy,e.laser||e.type==='elite'?5:4);
         if(e._pendingShot>=2){eShot(e.x-6,e.y+8,a.vx*.9,a.vy,3.5);eShot(e.x+6,e.y+8,a.vx*.9,a.vy,3.5);}
         if(e._pendingShot>=3){eShot(e.x-14,e.y+6,a.vx*.85,a.vy,3);eShot(e.x+14,e.y+6,a.vx*.85,a.vy,3);}
@@ -1916,7 +1983,10 @@ function update(dt){
     if(e.cd<=0&&e.y>0&&e.y<H*0.88){
       enemyFire(e);
       const base=e.family==='drone'?0.7:e.family==='sniper'?1.9:e.family==='tank'?1.5:e.type==='fodder'?2.2:e.type==='aimed'?1.1:e.type==='spread'?1.5:1.0;
-      e.cd=base*cFire()/(1+(stage-1)*0.03);
+      let cdMul=1;
+      if(eBullets.length>140) cdMul=1.4;
+      else if(countAimedOrDense()) cdMul=(e.type==='elite'||e.type==='fodder'||e.type==='aimed')?1.3:1.25;
+      e.cd=base*cFire()/(1+(stage-1)*0.03)*cdMul;
     }
 
     for(let j=pBullets.length-1;j>=0;j--){
