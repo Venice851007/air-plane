@@ -130,7 +130,9 @@ export default {
       }
       await env.RANKS.put(rlKey, String(Date.now()), { expirationTtl: 60 });
 
-      const entry = { name, score, stage, cycle, ship, at: new Date().toISOString() };
+      const secretsFound = Math.max(0, Math.min(99, Math.floor(Number(body.secretsFound) || 0)));
+      const goldFlashPerfect = Math.max(0, Math.min(9999, Math.floor(Number(body.goldFlashPerfect) || 0)));
+      const entry = { name, score, stage, cycle, ship, secretsFound, goldFlashPerfect, at: new Date().toISOString() };
       const results = {};
       for (const [period, key] of [
         ["week", weekKey()],

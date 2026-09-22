@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>苍穹打击者 · Sky Striker</title>
+<!-- psikyo2 -->
 <style>
 :root{--bg:#071018;--accent:#ff6b35;--accent2:#4ecdc4;--gold:#ffd166;--danger:#ef476f;--panel:rgba(7,16,24,.94);--cyan:#7ef9ff}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -245,7 +246,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-loot5';
+const GAME_VER='2026.09.22-psikyo2';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -272,25 +273,25 @@ const els={
 const SHIPS=[
   {id:'xunlei',name:'迅雷号',color:'#4ecdc4',wing:'#3d9eff',
    blurb:'彩京风集中机。长按射击蓄力，僚机前聚成炮阵；松手齐射追迹导弹。',
-   chargeSkill:'超射·僚机炮阵：僚机聚到机头，松手追迹齐射。僚越多越狠（1～3段蓄力）。',
+   chargeSkill:'超射·追迹导弹雨：Boss/精英杀手。僚机越多导弹越密越狠（无僚仍可弱放）。',
    wingSkill:'僚机既是火力也是蓄力燃料——无僚也能放，有僚才像打击者。',
    speed:340,fireRate:0.14,bombStock:2,pattern:'focus',chargeTime:0.9,wingStyle:'focus',
    chargeLock:0,chargeId:'homing'},
   {id:'fenghuang',name:'凤凰羽',color:'#ff6b35',wing:'#ffd166',
    blurb:'彩京风广角机。蓄力时僚机扇开；松手烈焰地毯。停射换爆发，打群怪。',
-   chargeSkill:'超射·炎爆扇阵：僚机展开后投下子母弹+灼烧带。段数越高地毯越宽。',
+   chargeSkill:'超射·烈焰地毯：广域消弹+子母弹+灼烧。清场控场专精（无僚仍可弱放）。',
    wingSkill:'僚机环绕侧射；蓄力时改扇阵。拾取「僚」强化。',
    speed:400,fireRate:0.16,bombStock:1,pattern:'spread',chargeTime:0.85,wingStyle:'orbit',
    chargeLock:0,chargeId:'flame'},
   {id:'tiewei',name:'铁卫舰',color:'#a8b2ff',wing:'#6c7ae0',
    blurb:'彩京风重甲。蓄力僚机前顶成盾墙（可消弹），松手铁壁冲击。',
-   chargeSkill:'超射·盾墙冲击：蓄力期间前盾消敌弹并轻伤；松手清弹+短无敌+穿甲。',
+   chargeSkill:'超射·铁壁：蓄力前盾消弹；松手大清弹+无敌窗+重穿甲冲击（生存专精）。',
    wingSkill:'僚机厚重；蓄力前聚成盾。移速大降换生存。',
    speed:260,fireRate:0.18,bombStock:2,pattern:'laser',chargeTime:1.1,wingStyle:'tank',
    chargeLock:0.38,chargeId:'shield'},
   {id:'yingren',name:'影刃',color:'#c77dff',wing:'#9b5de5',
    blurb:'彩京风极速机。蓄力快，僚机排成刃列；松手宽幅贯穿激光。',
-   chargeSkill:'超射·影刃列阵：僚机横排聚能，松手多束贯穿激光。对Boss特化。',
+   chargeSkill:'超射·贯穿影刃：厚激光/多束穿甲，Boss破甲特化（僚越多束越粗越久）。',
    wingSkill:'僚机贴身细束；蓄力时横排。拾取「僚」强化。',
    speed:440,fireRate:0.11,bombStock:1,pattern:'twin',chargeTime:0.7,wingStyle:'razor',
    chargeLock:0,chargeId:'beam'},
@@ -304,6 +305,11 @@ let invUntil=0,lastTime=0,flashA=0,shake=0,extendIdx=0,combo=0,comboT=0;
 let stage=1,cycle=1,stageT=0,waveIdx=0,boss=null,midDone=false,bossSpawned=false;
 let bannerT=0,charge=0,charging=false,fireCd=0,wingFireCd=0,bombLatch=false;
 let pauseLatch=false,shieldPulse=0,shieldR=0;
+/* Psikyo fusion run/stage stats */
+let goldFlashPerfect=0,goldFlashTotal=0,stageGoldPerfect=0,stageGoldTotal=0;
+let stageKills=0,stageSpawned=0,stageEscaped=0,stageStartT=0;
+let stageGrades=[],secretsFound=0,secret=null,activeWaves=null;
+let gradeFlashT=0,gradeFlashTxt='';
 
 const keys=Object.create(null);
 let ptrDown=false,ptrX=0,ptrY=0,touchBomb=false,touchCharge=false;
@@ -489,10 +495,14 @@ const STAGES=[
 /* ===== 轮回 / cycle difficulty (soft-capped, readable corridors) ===== */
 const CYCLE_SOFT=5; // escalation soft-caps after this
 function cycleTier(){return Math.min(cycle-1, CYCLE_SOFT) + Math.max(0,cycle-1-CYCLE_SOFT)*0.35;}
-function cMult(){return 1+cycleTier()*0.14;}          // HP / score / spawn lean
-function cFire(){return 1/(1+cycleTier()*0.07);}      // shot interval shrink
-function cSpd(){return 1+Math.min(0.35,cycleTier()*0.06);} // bullet speed
-function cPat(){return Math.min(3, 1+((cycleTier()*0.55)|0));} // extra pattern richness 1..3
+function cMult(){return 1+cycleTier()*0.16;}          // HP / score / spawn lean (loop2+)
+function cFire(){return 1/(1+cycleTier()*0.08);}      // shot interval shrink
+function cSpd(){return 1+Math.min(0.55,cycleTier()*0.16);} // bullet speed ~+16%/cycle softcap
+function cPat(){return Math.min(3, 1+((cycleTier()*0.65)|0));} // extra pattern richness 1..3
+function deathBulletChance(){ // Psikyo corpse bullets loop2+
+  if(cycle<2) return 0;
+  return Math.min(0.55, 0.22+(cycle-2)*0.08);
+}
 function stageBannerText(){
   const nm=STAGES[stage-1].name;
   return cycle>1?('第'+cycle+'轮回 · 第'+stage+'关 · '+nm):('第 '+stage+' 关 · '+nm);
@@ -576,9 +586,10 @@ function pickupWingItem(){
     rebuildWingmen(true);
     showBanner(wingLevel>=wingCap?'僚机达当前上限(通关可提升)':'僚机 UP Lv'+wingLevel,.85);
   }else{
-    // Soft safety: score consolation instead of hard reject feel
-    addScore(200+stage*40,false);
-    showBanner('僚机编队已满 +分',.55);
+    // Strikers surplus W → generous score
+    const bonus=1800+stage*220+cycle*180;
+    addScore(bonus,false);
+    showBanner('僚已满 → 得分 +'+bonus,.75);
   }
 }
 function updateWingmen(dt){
@@ -644,6 +655,14 @@ function updateWingmen(dt){
         }
       }
     }
+  }else if(charging&&(player.ship.chargeId==='shield'||player.ship.pattern==='laser')){
+    // 无僚时仍保留机头弱盾消弹（铁卫职差）
+    const ratio=charge/Math.max(0.01,player.ship.chargeTime);
+    const R=36+ratio*28;
+    for(let i=eBullets.length-1;i>=0;i--){
+      const b=eBullets[i];
+      if(b.y<player.y+10&&Math.hypot(b.x-player.x,b.y-(player.y-28))<R) eBullets.splice(i,1);
+    }
   }
 }
 
@@ -653,8 +672,10 @@ function resetRun(){
   speedLv=0;speedCap=BASE_SPEED_CAP;powerCap=BASE_POWER_CAP;fireSoft=0;magnetLv=0;shieldStock=0;
   extendIdx=0;combo=0;comboT=0;stage=1;cycle=1;stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;
   pBullets=[];eBullets=[];enemies=[];parts=[];items=[];medals=[];beams=[];shieldPulse=0;shieldR=0;
+  goldFlashPerfect=0;goldFlashTotal=0;stageGrades=[];secretsFound=0;secret=null;activeWaves=null;gradeFlashT=0;gradeFlashTxt='';
   player.x=W/2;player.y=H-100;charge=0;charging=false;fireCd=0;wingFireCd=0;
   invUntil=0;flashA=0;shake=0;rebuildWingmen(false);updateHud();
+  prepareStageWaves();resetStageStats();spawnStageSecret();
 }
 function beginMission(){
   resetRun();state='play';hideAll();
@@ -707,8 +728,18 @@ function dropLoot(x,y,kind){
   // kind1 精英：保底1个（缺口加权）+30%再+1
   // kind2 中型：固定2个（至少1个火力或僚）
   // kind3+ Boss：固定3个（必含火力或僚）+再随机0~2，总量3~5
+  const GOLD_TIERS=[200,500,1000,2000];
   const medal=function(n,base){
-    for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*28,y:y+(Math.random()-.5)*16,vy:65+Math.random()*45,vx:(Math.random()-.5)*55,life:5,val:Math.floor((base+stage*12)*(1+(cycle-1)*0.1))});
+    // Psikyo flashing gold bars: value cycles 200→500→1000→2000
+    for(let i=0;i<n;i++){
+      const flash=Math.random()*4; // start phase
+      medals.push({
+        x:x+(Math.random()-.5)*28,y:y+(Math.random()-.5)*16,
+        vy:58+Math.random()*40,vx:(Math.random()-.5)*50,
+        life:6.5,flash,gold:1,base:Math.floor((base+stage*8)*(1+(cycle-1)*0.08)),
+        tiers:GOLD_TIERS
+      });
+    }
   };
   const pushIt=function(t,ox,oy){
     items.push({type:t,x:x+(ox||0)+(Math.random()-.5)*18,y:y+(oy||0)+(Math.random()-.5)*14,vy:48+Math.random()*22,vx:(Math.random()-.5)*50,life:11,r:18});
@@ -773,13 +804,29 @@ function mkEnemy(o){
   const m=cMult();
   if(o.hp){o.hp=Math.max(1,Math.ceil(o.hp*m));o.maxHp=o.hp;}
   if(o.score) o.score=Math.floor(o.score*(1+(cycle-1)*0.1));
-  if(o.spd) o.spd*=(1+Math.min(0.2,cycleTier()*0.04));
-  enemies.push(o);
+  if(o.spd) o.spd*=(1+Math.min(0.25,cycleTier()*0.05));
+  enemies.push(o);noteSpawn(1);
+  // loop2+: slight elite drip on fodder packs
+  if(cycle>=2&&o.type==='fodder'&&Math.random()<Math.min(0.08,0.03+(cycle-2)*0.015)&&enemies.filter(e=>e.type==='elite').length<4){
+    /* skip auto-elite here to avoid empty-field surprises; density via spawnN */
+  }
 }
 function spawnN(base){
   const stageBonus=Math.min(2,(stage/6)|0);
-  const cycleBonus=Math.min(3,(cycleTier()*0.7)|0);
+  const cycleBonus=Math.min(4,(cycleTier()*0.85)|0);
   return base+stageBonus+cycleBonus;
+}
+function noteSpawn(n){stageSpawned+=(n|0);}
+function spawnDeathBullets(x,y,kind){
+  if(cycle<2) return;
+  const ch=deathBulletChance()*(kind>=1?1.15:1);
+  if(Math.random()>ch) return;
+  const n=2+((Math.random()*4)|0); // 2..5
+  const spd=70+stage*4+Math.min(40,cycle*6);
+  for(let i=0;i<n;i++){
+    const ang=(Math.PI*2*i)/n+(Math.random()*0.4);
+    eShot(x,y,Math.cos(ang)*spd,Math.sin(ang)*spd,3);
+  }
 }
 
 
@@ -928,6 +975,7 @@ function spawnMid(){
   const vx=arch==='dasher'?150:arch==='tank'?70:95;
   boss={kind:'mid',name:nm,theme:STAGES[stage-1].theme,arch,sil:meta.sil,phase:1,phases:2,x:W/2,y:-90,w:arch==='tank'?84:76,h:arch==='tank'?66:60,hp,maxHp:hp,
     t:0,cd:0.7*cFire(),vx,entered:false,tell:0,score:Math.floor(4000*stage*(1+(cycle-1)*0.12)),flash:0,dashT:0};
+  attachBossPods(boss);
   showBanner('⚠ '+boss.name+(cycle>1?' · 轮回'+cycle:''),2);
 }
 function spawnBoss(){
@@ -944,6 +992,7 @@ function spawnBoss(){
   boss={kind:'stage',name:baseName,theme:STAGES[stage-1].theme,arch,sil:meta.sil,phase:1,phases,x:W/2,y:-110,
     w:big?122:(arch==='tank'?112:104),h:big?96:(arch==='tank'?90:82),hp,maxHp:hp,
     t:0,cd:0.55*cFire(),vx,entered:false,tell:0,score:Math.floor(14000*stage*(1+(cycle-1)*0.15)),flash:0,dashT:0,sweepAng:0};
+  attachBossPods(boss);
   showBanner('⚔ BOSS · '+boss.name+(cycle>1?' · 第'+cycle+'轮回':''),2.4);
 }
 
@@ -1017,8 +1066,12 @@ function enemyFire(e){
 
 function bossFire(b){
   const arch=b.arch||'ring';
-  const pat=cPat();
+  const pat=Math.max(1,cPat()-Math.min(2,(b.gunLoss|0)));
   const ph=b.phase|1;
+  const loss=b.gunLoss|0;
+  // side guns destroyed → skip some aimed volleys / widen gaps
+  if(loss>=2&&Math.random()<0.35){b.cd=Math.max(b.cd,0.25);return;}
+  if(loss>=1&&Math.random()<0.18){b.cd=Math.max(b.cd,0.12);return;}
   // Mid-boss: lighter versions of same archetype
   if(b.kind==='mid'){
     if(arch==='ring'){
@@ -1075,7 +1128,7 @@ function applyPOverflow(){
   if(magnetLv<MAX_MAGNET_LV) opts.push({k:'magnet',w:2,label:'磁吸+1'});
   if(bombs<bombCap) opts.push({k:'bomb',w:1,label:'炸弹+1'});
   if(shieldStock<MAX_SHIELD_STOCK) opts.push({k:'shield',w:2,label:'护盾+1'});
-  if(!opts.length){addScore(800,false);showBanner('P已满 → 得分+800',.75);return;}
+  if(!opts.length){const bonus=2200+stage*260+cycle*200;addScore(bonus,false);showBanner('P已满 → 得分 +'+bonus,.85);return;}
   // Prefer speed while available: 70% chance force speed if present
   let pick=null;
   const speedOpt=opts.find(o=>o.k==='speed');
@@ -1091,7 +1144,9 @@ function applyPOverflow(){
   else if(pick.k==='magnet') magnetLv++;
   else if(pick.k==='bomb') bombs=Math.min(bombCap,bombs+1);
   else if(pick.k==='shield') shieldStock++;
-  showBanner('P已满 → '+pick.label,.95);
+  const surplus=400+stage*40;
+  addScore(surplus,false);
+  showBanner('P已满 → '+pick.label+' +'+surplus,.95);
 }
 
 function fireNormal(){
@@ -1145,82 +1200,82 @@ function fireWingmenNormal(){
 }
 
 function fireHyper(scale,lv){
-  // scale includes wing bonus; lv=1..3 Psikyo charge tier
+  // scale includes living-wingmen bonus; lv=1..3; 0-wing still ~40-50% via scale
   lv=lv||1;
-  scale=Math.max(0.45,Math.min(1.6,scale==null?1:scale));
-  const y=player.y-player.h/2;shake=Math.max(shake,.35+scale*.25);
+  scale=Math.max(0.38,Math.min(1.7,scale==null?1:scale));
+  const aw=Math.max(0,aliveWingmen|0);
+  const y=player.y-player.h/2;shake=Math.max(shake,.35+scale*.28);
   const s=player.ship;
   const cid=s.chargeId||s.pattern;
   const full=scale>=0.92;
   if(cid==='homing'||s.pattern==='focus'){
-    // 迅雷：追迹导弹雨（加强）
-    const n=Math.round((10+Math.min(6,power))*scale);
+    // 迅雷：集中追迹导弹雨 — Boss/精英杀手，数量/伤害随僚暴涨
+    const n=Math.round((7+Math.min(5,power)+aw*2.2)*scale);
     for(let i=0;i<n;i++){
       const t=(i/Math.max(1,n-1))-0.5;
-      const ang=-Math.PI/2+t*(1.05+scale*0.25);
-      const sp=300+Math.random()*100;
-      pushP({x:player.x+t*22,y:y+Math.random()*6,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,
-        r:5.5,dmg:(3.2+power*0.75)*scale,color:i%2?s.color:'#fff',hyper:1,home:2,pierce:2,missile:1});
+      const ang=-Math.PI/2+t*(0.7+scale*0.2); // 较窄扇面=集中
+      const sp=320+Math.random()*110;
+      pushP({x:player.x+t*14,y:y+Math.random()*6,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,
+        r:5.2+scale,dmg:(3.6+power*0.85+aw*0.35)*scale,color:i%2?s.color:'#fff',hyper:1,home:2,pierce:2+(aw>=3?1:0),missile:1});
     }
-    // release shock: soft clear near player so charge payoff feels safe
-    const R=55+scale*35;
+    const R=48+scale*28+aw*4;
     for(let i=eBullets.length-1;i>=0;i--){
       if(Math.hypot(eBullets[i].x-player.x,eBullets[i].y-player.y)<R) eBullets.splice(i,1);
     }
-    showBanner('追迹齐射 Lv'+lv+(wingmen.length?(' ·僚'+wingmen.length):''),.7+lv*.1);
+    showBanner('追迹齐射 Lv'+lv+(aw?(' ·僚'+aw):' ·弱放'),.7+lv*.1);
   }else if(cid==='flame'||s.pattern==='spread'){
-    // 凤凰：烈焰地毯
-    const span=Math.round(6*scale);
+    // 凤凰：广域烈焰+强消弹 — 控场
+    const span=Math.round((7+aw*0.8)*scale);
     for(let i=-span;i<=span;i++){
-      pushP({x:player.x+i*6,y,vx:i*52,vy:-300-Math.abs(i)*14,r:6,dmg:(2.8+power*0.55)*scale,color:s.color,hyper:1,bombDrop:1,flame:1,pierce:1});
+      pushP({x:player.x+i*7,y,vx:i*(58+aw*3),vy:-280-Math.abs(i)*12,r:6.5,dmg:(2.5+power*0.5)*scale,color:s.color,hyper:1,bombDrop:1,flame:1,pierce:1});
     }
-    for(let k=0;k<Math.round(4+4*scale);k++){
-      pushP({x:player.x+(Math.random()-.5)*36,y:y+10,vx:(Math.random()-.5)*70,vy:50+k*22,r:6.5,dmg:(3.2+power*0.5)*scale,color:'#ffd166',hyper:1,bombDrop:1,flame:1});
+    for(let k=0;k<Math.round(5+5*scale+aw);k++){
+      pushP({x:player.x+(Math.random()-.5)*(50+aw*8),y:y+10,vx:(Math.random()-.5)*90,vy:45+k*20,r:7,dmg:(3.0+power*0.45)*scale,color:'#ffd166',hyper:1,bombDrop:1,flame:1});
     }
-    // lingering burn spots (simple DoT zones)
-    const burns=Math.round(2+3*scale);
+    const burns=Math.round(3+4*scale+aw*0.5);
     for(let k=0;k<burns;k++){
-      parts.push({x:player.x+(Math.random()-.5)*90,y:player.y-80-Math.random()*120,vx:0,vy:18,life:1.6*scale,max:1.6,r:18,color:'#ff6b35',burn:1,burnDmg:0.55+power*0.12});
+      parts.push({x:player.x+(Math.random()-.5)*(110+aw*10),y:player.y-60-Math.random()*140,vx:0,vy:16,life:1.8*scale,max:1.8,r:20,color:'#ff6b35',burn:1,burnDmg:0.6+power*0.12});
     }
-    const R=90+scale*40;
+    const R=100+scale*55+aw*8; // 最大清弹半径
     for(let i=eBullets.length-1;i>=0;i--){
       if(Math.hypot(eBullets[i].x-player.x,eBullets[i].y-player.y)<R) eBullets.splice(i,1);
     }
-    flashA=Math.max(flashA,.2+scale*.2);
-    showBanner('炎爆扇阵 Lv'+lv,.7+lv*.1);
+    flashA=Math.max(flashA,.25+scale*.25);
+    showBanner('炎爆控场 Lv'+lv+(aw?(' ·僚'+aw):' ·弱放'),.7+lv*.1);
   }else if(cid==='shield'||s.pattern==='laser'){
-    // 铁卫：铁壁（仅释放时无敌，蓄力过程不无敌）
-    const wlVis=Math.min(wingLevel,8);
-    shieldR=Math.min(175,100+wlVis*12)* (0.75+0.25*scale);
-    shieldPulse=0.7*scale+wlVis*0.04;
-    // short i-frames on RELEASE only
-    invUntil=Math.max(invUntil,performance.now()+(380+wlVis*35)*scale);
-    flashA=Math.max(flashA,.45);
+    // 铁卫：生存 — 大清弹+无敌+重穿甲冲击（蓄力前盾已在 updateWingmen）
+    const wlVis=Math.min(aw,8);
+    shieldR=Math.min(190,110+wlVis*14)*(0.78+0.28*scale);
+    shieldPulse=0.85*scale+wlVis*0.05;
+    invUntil=Math.max(invUntil,performance.now()+(480+wlVis*55)*scale);
+    flashA=Math.max(flashA,.5);
     for(let i=eBullets.length-1;i>=0;i--){
       if(Math.hypot(eBullets[i].x-player.x,eBullets[i].y-player.y)<shieldR) eBullets.splice(i,1);
     }
-    // soft damage pulse to nearby fodder so release isn't "only shield"
     for(const e of enemies){
-      if(Math.hypot(e.x-player.x,e.y-player.y)<shieldR*1.05) e.hp-=(6+power*1.2)*scale;
+      if(Math.hypot(e.x-player.x,e.y-player.y)<shieldR*1.1) e.hp-=(7+power*1.4)*scale;
     }
-    if(boss&&Math.hypot(boss.x-player.x,boss.y-player.y)<shieldR*1.2){boss.hp-=(10+power*2)*scale;boss.flash=.25;}
-    for(let i=0;i<24;i++){const ang=i*(Math.PI*2/24);parts.push({x:player.x+Math.cos(ang)*shieldR*.55,y:player.y+Math.sin(ang)*shieldR*.55,vx:Math.cos(ang)*150,vy:Math.sin(ang)*150,life:.45,max:.45,r:4,color:'#a8b2ff'});}
-    for(let i=0;i<6;i++) pushP({x:player.x,y:y-i*12,vx:0,vy:-680,r:9,dmg:(4.5+power*1.1)*scale,color:'#a8e6ff',hyper:1,pierce:6});
-    showBanner('盾墙冲击 Lv'+lv,.75+lv*.1);
+    if(boss&&Math.hypot(boss.x-player.x,boss.y-player.y)<shieldR*1.25){boss.hp-=(12+power*2.2)*scale;boss.flash=.25;}
+    // damage pods too
+    if(boss&&boss.pods){for(const pod of boss.pods){if(!pod.alive)continue;const px=boss.x+pod.xoff,py=boss.y+pod.yoff;if(Math.hypot(px-player.x,py-player.y)<shieldR*1.1){pod.hp-=(8+power*1.5)*scale;}}}
+    for(let i=0;i<28;i++){const ang=i*(Math.PI*2/28);parts.push({x:player.x+Math.cos(ang)*shieldR*.55,y:player.y+Math.sin(ang)*shieldR*.55,vx:Math.cos(ang)*160,vy:Math.sin(ang)*160,life:.5,max:.5,r:4,color:'#a8b2ff'});}
+    const pierceN=Math.round(5+3*scale+wlVis*0.5);
+    for(let i=0;i<pierceN;i++) pushP({x:player.x+(i-(pierceN-1)/2)*5,y:y-i*8,vx:0,vy:-700,r:10,dmg:(5.2+power*1.3)*scale,color:'#a8e6ff',hyper:1,pierce:8});
+    showBanner('铁壁冲击 Lv'+lv+(aw?(' ·僚'+aw):' ·弱放'),.75+lv*.1);
   }else{
-    // 影刃：宽幅贯穿激光
-    const life=0.55+0.45*scale;
-    const w=18+power*2+10*scale;
-    beams.push({x:player.x,y:y,w:w,life:life,dmg:(1.6+power*0.55)*scale,tick:0,color:s.color,glow:s.wing});
-    // side assist beams on full
-    if(scale>=0.85){
-      beams.push({x:player.x-22,y:y,w:8+power,life:life*0.75,dmg:(0.9+power*0.3)*scale,tick:0,color:s.wing,glow:'#fff'});
-      beams.push({x:player.x+22,y:y,w:8+power,life:life*0.75,dmg:(0.9+power*0.3)*scale,tick:0,color:s.wing,glow:'#fff'});
+    // 影刃：厚贯穿激光 / 多束 — Boss破甲
+    const life=0.6+0.55*scale+aw*0.05;
+    const w=22+power*2.5+14*scale+aw*2;
+    beams.push({x:player.x,y:y,w:w,life:life,dmg:(2.0+power*0.7+aw*0.15)*scale,tick:0,color:s.color,glow:s.wing,armorShred:1});
+    const sideN=aw>=2?2:(scale>=0.85?1:0);
+    for(let sidx=1;sidx<=sideN;sidx++){
+      beams.push({x:player.x-18*sidx,y:y,w:9+power+aw,life:life*0.8,dmg:(1.1+power*0.35)*scale,tick:0,color:s.wing,glow:'#fff',armorShred:1});
+      beams.push({x:player.x+18*sidx,y:y,w:9+power+aw,life:life*0.8,dmg:(1.1+power*0.35)*scale,tick:0,color:s.wing,glow:'#fff',armorShred:1});
     }
-    for(let i=-2;i<=2;i++){
-      pushP({x:player.x+i*8,y,vx:i*10,vy:-820,r:3.5,dmg:(2.6+power*0.55)*scale,color:'#e0aaff',hyper:1,pierce:8});
+    for(let i=-3;i<=3;i++){
+      pushP({x:player.x+i*7,y,vx:i*8,vy:-860,r:3.8,dmg:(3.0+power*0.65)*scale,color:'#e0aaff',hyper:1,pierce:10});
     }
-    showBanner('影刃列阵 Lv'+lv,.7+lv*.1);
+    showBanner('影刃贯穿 Lv'+lv+(aw?(' ·僚'+aw):' ·弱放'),.7+lv*.1);
   }
   for(let i=0;i<14+Math.round(8*scale);i++){const ang=-Math.PI/2+(Math.random()-.5)*1.2;parts.push({x:player.x,y,vx:Math.cos(ang)*220,vy:Math.sin(ang)*220,life:.4,max:.4,r:3,color:s.color});}
   fireWingmenHyper(scale);
@@ -1340,8 +1395,181 @@ function playFakeAd2(){
 }
 
 
+/* ===== Psikyo stage grade / secret / wave RNG ===== */
+const GRADE_LABEL={0:'铜',1:'银',2:'金'};
+function gradeRank(v){return v>=2?'金':v>=1?'银':'铜';}
+function awardStageGrades(){
+  // Speed: clear time vs target (last wave t + boss window)
+  const script=activeWaves||STAGES[stage-1];
+  let lastT=32;
+  if(script&&script.waves&&script.waves.length) lastT=script.waves[script.waves.length-1].t||32;
+  const target=lastT+22; // gold if clear under target
+  const clearTime=Math.max(0.1,stageT-stageStartT);
+  let speedG=0;
+  if(clearTime<=target*0.85) speedG=2;
+  else if(clearTime<=target*1.05) speedG=1;
+  else speedG=0;
+  // Flash: perfect gold ratio
+  let flashG=0;
+  const gTot=Math.max(1,stageGoldTotal);
+  const ratio=stageGoldPerfect/gTot;
+  if(stageGoldTotal>=3&&ratio>=0.45) flashG=2;
+  else if(stageGoldTotal>=2&&ratio>=0.25) flashG=1;
+  else if(stageGoldPerfect>=1) flashG=1;
+  else flashG=0;
+  // Kill: kills vs spawned (escaped hurt)
+  let killG=0;
+  const spawned=Math.max(1,stageSpawned);
+  const killRatio=stageKills/spawned;
+  if(killRatio>=0.92&&stageEscaped<=2) killG=2;
+  else if(killRatio>=0.78) killG=1;
+  else killG=0;
+  const bonus=Math.floor((400+stage*80)*(1+speedG)*(1+flashG*0.5)*(1+killG*0.5)*(1+(cycle-1)*0.08));
+  addScore(bonus,false);
+  const rec={stage,cycle,speed:speedG,flash:flashG,kill:killG,bonus,time:+clearTime.toFixed(1)};
+  stageGrades.push(rec);
+  gradeFlashTxt='关卡章 速'+GRADE_LABEL[speedG]+' · 闪'+GRADE_LABEL[flashG]+' · 击'+GRADE_LABEL[killG]+'  +'+bonus;
+  gradeFlashT=2.8;
+  showBanner(gradeFlashTxt,2.6);
+  return rec;
+}
+function resetStageStats(){
+  stageGoldPerfect=0;stageGoldTotal=0;stageKills=0;stageSpawned=0;stageEscaped=0;
+  stageStartT=stageT;secret=null;
+}
+function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
+function prepareStageWaves(){
+  const base=STAGES[stage-1];
+  if(!base){activeWaves=null;return;}
+  // shallow clone waves; early stages light RNG among fodder waves
+  const waves=base.waves.map(w=>({t:w.t,fn:w.fn,mid:w.mid,boss:w.boss}));
+  if(stage<=4){
+    const seed=((cycle*31+stage*17+selectedShip*13)|0)>>>0;
+    const rnd=mulberry32(seed^(Date.now()&0xffff));
+    // collect indices of non-mid/boss waves between start and mid
+    const midIdx=waves.findIndex(w=>w.mid);
+    const fodderIdx=[];
+    for(let i=0;i<waves.length;i++){
+      if(waves[i].mid||waves[i].boss) continue;
+      // keep first wave + last pre-boss anchors; shuffle mid fodder
+      if(i===0) continue;
+      if(midIdx>=0&&i===midIdx-1) continue;
+      fodderIdx.push(i);
+    }
+    if(fodderIdx.length>=2&&rnd()<0.85){
+      // swap two random mid fodder waves (keep timings)
+      const a=fodderIdx[(rnd()*fodderIdx.length)|0];
+      let b=fodderIdx[(rnd()*fodderIdx.length)|0];
+      if(a!==b){
+        const fa=waves[a].fn, fb=waves[b].fn;
+        waves[a]={t:waves[a].t,fn:fb};
+        waves[b]={t:waves[b].t,fn:fa};
+      }
+    }
+  }
+  activeWaves={name:base.name,theme:base.theme,bossArch:base.bossArch,waves};
+}
+function spawnStageSecret(){
+  const kind=(stage%2===0)?'prop':'hover';
+  if(kind==='hover'){
+    const sx=40+((stage*97)%Math.max(40,(W-80|0)));
+    const sy=H*0.42+((stage*53)%80);
+    secret={kind:'hover',x:sx,y:sy,r:28,hold:0,need:1.5,done:false,pulse:0};
+  }else{
+    const sx=W*0.2+((stage*67)%Math.max(40,W*0.6));
+    secret={kind:'prop',x:sx,y:-30,r:16,hp:3,maxHp:3,vy:55,done:false,pulse:0};
+  }
+}
+function updateSecret(dt){
+  if(!secret||secret.done) return;
+  secret.pulse=(secret.pulse||0)+dt;
+  if(secret.kind==='hover'){
+    const near=Math.hypot(player.x-secret.x,player.y-secret.y)<secret.r+18;
+    const shooting=keys[' ']||keys.Space||touchCharge||keys.Shift||keys.j||keys.J||charging;
+    if(near&&!shooting){secret.hold+=dt;} else {secret.hold=Math.max(0,secret.hold-dt*0.6);}
+    if(secret.hold>=secret.need) discoverSecret();
+  }else if(secret.kind==='prop'){
+    secret.y+=secret.vy*dt;
+    if(secret.y>H+40){secret.done=true;secret=null;return;}
+    for(let j=pBullets.length-1;j>=0;j--){
+      const b=pBullets[j];
+      if(Math.hypot(b.x-secret.x,b.y-secret.y)<secret.r+b.r){
+        secret.hp-=b.dmg;explode(b.x,b.y,'#ffd166',4);
+        if(!(b.pierce&&b.pierce>0)) pBullets.splice(j,1); else {b.pierce--;b.dmg*=0.85;}
+        if(secret.hp<=0){discoverSecret();break;}
+      }
+    }
+  }
+}
+function discoverSecret(){
+  if(!secret||secret.done) return;
+  secret.done=true;
+  secretsFound++;
+  const big=3500+stage*400+cycle*300;
+  addScore(big,false);
+  // guaranteed wing or power
+  if((wingLevel<wingCap)||(aliveWingmen<wingLevel)) items.push({type:'W',x:secret.x,y:secret.y,vy:-30,vx:0,life:10,r:18});
+  else if(power<powerCap) items.push({type:'P',x:secret.x,y:secret.y,vy:-30,vx:0,life:10,r:18});
+  else items.push({type:'B',x:secret.x,y:Math.min(secret.y,H-80),vy:-20,vx:0,life:10,r:18});
+  showBanner('隐藏发现！ +'+big,2.2);
+  explode(secret.x,secret.y,'#ffd166',24);flashA=.35;
+  secret=null;
+}
+function drawSecret(){
+  if(!secret||secret.done) return;
+  const p=0.5+0.5*Math.sin((secret.pulse||0)*6);
+  if(secret.kind==='hover'){
+    ctx.save();
+    ctx.strokeStyle='rgba(255,209,102,'+(0.35+p*0.5)+')';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(secret.x,secret.y,secret.r,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(255,209,102,'+(0.15+p*0.2)+')';ctx.beginPath();ctx.arc(secret.x,secret.y,10,0,Math.PI*2);ctx.fill();
+    if(secret.hold>0){
+      ctx.strokeStyle='#fff';ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(secret.x,secret.y,secret.r+4,-Math.PI/2,(-Math.PI/2)+Math.PI*2*(secret.hold/secret.need));ctx.stroke();
+    }
+    ctx.fillStyle='#ffd166';ctx.font='10px sans-serif';ctx.textAlign='center';
+    ctx.fillText('?',secret.x,secret.y+3);
+    ctx.restore();
+  }else{
+    ctx.save();
+    ctx.fillStyle='#c9a227';ctx.fillRect(secret.x-8,secret.y-10,16,20);
+    ctx.strokeStyle='#fff8';ctx.strokeRect(secret.x-8,secret.y-10,16,20);
+    ctx.fillStyle='#222';ctx.fillRect(secret.x-10,secret.y-16,20,3);
+    ctx.fillStyle='#4ecdc4';ctx.fillRect(secret.x-10,secret.y-16,20*(secret.hp/secret.maxHp),3);
+    ctx.restore();
+  }
+}
+function attachBossPods(b){
+  if(!b) return;
+  const isMid=b.kind==='mid';
+  const php=Math.max(12,Math.floor(b.maxHp*(isMid?0.22:0.18)));
+  b.pods=[
+    {xoff:-(b.w*0.52),yoff:8,hp:php,maxHp:php,alive:true,r:isMid?16:20},
+    {xoff:(b.w*0.52),yoff:8,hp:php,maxHp:php,alive:true,r:isMid?16:20}
+  ];
+  b.gunLoss=0;
+}
+function hitBossPods(pb){
+  if(!boss||!boss.pods) return false;
+  for(const pod of boss.pods){
+    if(!pod.alive) continue;
+    const px=boss.x+pod.xoff,py=boss.y+pod.yoff;
+    if(Math.hypot(pb.x-px,pb.y-py)<pod.r+pb.r){
+      pod.hp-=pb.dmg;boss.flash=.12;explode(pb.x,pb.y,'#ffd166',5);
+      if(pod.hp<=0){
+        pod.alive=false;boss.gunLoss=(boss.gunLoss||0)+1;
+        addScore(800+stage*100,false);explode(px,py,'#ff6b35',22);
+        dropLoot(px,py,1);
+        showBanner('部位破坏！炮口减弱',1.2);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 function flushWaves(){
-  const script=STAGES[stage-1];
+  const script=activeWaves||STAGES[stage-1];
   if(!script) return;
   // 绝不在 boss/mid 存活时跳过后续 mid/boss 波，杜绝空场
   while(waveIdx<script.waves.length && stageT>=script.waves[waveIdx].t){
@@ -1422,6 +1650,7 @@ function applyBoostPick(o,done){
 }
 
 function nextStage(){
+  awardStageGrades();
   openStageBoost(function(){
     stage++;
     if(stage>STAGES.length){
@@ -1432,7 +1661,9 @@ function nextStage(){
       score+=bonus;
       stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;enemies=[];eBullets=[];pBullets=[];beams=[];
       invUntil=Math.max(invUntil,performance.now()+1800);
-      showBanner('第'+cleared+'轮回通关！→ 第'+cycle+'轮回  +'+bonus,3.2);
+      prepareStageWaves();resetStageStats();spawnStageSecret();
+      if(cycle===2) showBanner('⚠ 二周目压迫开启 · 尸弹与弹速↑  +'+bonus,3.4);
+      else showBanner('第'+cleared+'轮回通关！→ 第'+cycle+'轮回  +'+bonus,3.2);
       state='play';
       if(els.hud) els.hud.style.display='block';
       if(els.touch) els.touch.style.display='block';
@@ -1441,6 +1672,7 @@ function nextStage(){
       return;
     }
     stageT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;enemies=[];eBullets=[];
+    prepareStageWaves();resetStageStats();spawnStageSecret();
     showBanner(stageBannerText(),2.5);
     state='play';
     if(els.hud) els.hud.style.display='block';
@@ -1453,13 +1685,17 @@ function nextStage(){
 function killEnemy(i,e){
   addScore(e.score,Math.hypot(e.x-player.x,e.y-player.y)<70);
   const col=e.col||(e.type==='elite'?'#ff6b35':e.type==='spread'?'#c77dff':'#4ecdc4');
-  explode(e.x,e.y,col,e.kind?28:14);dropLoot(e.x,e.y,e.kind);enemies.splice(i,1);shake=Math.max(shake,.12);
+  explode(e.x,e.y,col,e.kind?28:14);dropLoot(e.x,e.y,e.kind);
+  stageKills++;
+  if((e.kind|0)<=1) spawnDeathBullets(e.x,e.y,e.kind|0);
+  enemies.splice(i,1);shake=Math.max(shake,.12);
 }
 
 function update(dt){
   for(const s of stars){s.y+=s.v*dt*(.55+stage*.08);if(s.y>H){s.y=0;s.x=Math.random()*W;}}
   for(const c of clouds){c.y+=c.v*dt;if(c.y>H+50){c.y=-50;c.x=Math.random()*W;}}
   if(bannerT>0){bannerT-=dt;if(bannerT<=0) els.banner.classList.remove('show');}
+  if(gradeFlashT>0) gradeFlashT-=dt;
   if(shake>0) shake=Math.max(0,shake-dt*1.8);
   if(comboT>0){comboT-=dt;if(comboT<=0) combo=0;}
   if(flashA>0) flashA=Math.max(0,flashA-dt*1.3);
@@ -1468,7 +1704,7 @@ function update(dt){
 
   stageT+=dt;
   flushWaves();
-  const script=STAGES[stage-1];
+  const script=activeWaves||STAGES[stage-1];
   if(bossSpawned&&!boss&&enemies.length===0&&eBullets.length<8&&stageT>script.waves[script.waves.length-1].t+1.2){
     nextStage();return;
   }
@@ -1491,6 +1727,7 @@ function update(dt){
   player.x=Math.max(player.w/2,Math.min(W-player.w/2,player.x));
   player.y=Math.max(55,Math.min(H-36,player.y));
   updateWingmen(dt);
+  updateSecret(dt);
 
   if(want){
     charging=true;
@@ -1514,10 +1751,11 @@ function update(dt){
     else if(ratio>=0.62) lv=2;
     else if(ratio>=0.32) lv=1;
     if(lv>0){
-      // 威力：段数 × 僚机加成（无僚也能放，有僚才「像彩京」）
-      const wingMul=1+Math.min(wingmen.length,8)*0.12;
-      const scale=(0.45+lv*0.18)*wingMul;
-      fireHyper(Math.min(1.55,scale),lv);
+      // 威力随存活僚机：0僚≈45%弱放，4+僚接近满功率彩京爆发
+      const aw=Math.max(0,aliveWingmen|0);
+      const wingMul=0.45+Math.min(1.0,aw/4)*0.55; // 0→0.45, 4→1.0
+      const scale=(0.42+lv*0.2)*wingMul*(1+Math.min(aw,8)*0.04);
+      fireHyper(Math.min(1.7,scale),lv);
     }else{
       showBanner('蓄力取消',.35);
     }
@@ -1595,7 +1833,18 @@ function update(dt){
         }
       }
       if(boss&&Math.abs(boss.x-bm.x)<half+boss.w*0.4&&boss.y<bm.y+40){
-        boss.hp-=bm.dmg*1.1;boss.flash=.15;
+        const shred=bm.armorShred?1.35:1.1;
+        boss.hp-=bm.dmg*shred;boss.flash=.15;
+      }
+      if(boss&&boss.pods){
+        for(const pod of boss.pods){
+          if(!pod.alive) continue;
+          const px=boss.x+pod.xoff,py=boss.y+pod.yoff;
+          if(Math.abs(px-bm.x)<half+pod.r&&py<bm.y+40){
+            pod.hp-=bm.dmg*(bm.armorShred?1.4:1);
+            if(pod.hp<=0){pod.alive=false;boss.gunLoss=(boss.gunLoss||0)+1;addScore(800+stage*100,false);explode(px,py,'#ff6b35',22);dropLoot(px,py,1);showBanner('部位破坏！炮口减弱',1.2);}
+          }
+        }
       }
     }
   }
@@ -1629,7 +1878,7 @@ function update(dt){
       else{e.y=hy+Math.sin(e.t*0.8)*4;if(e.mode==='hold') e.x+=Math.sin(e.t*0.6)*25*dt;}
     }else{e.y+=e.spd*dt;}
     e.x=Math.max(e.w/2,Math.min(W-e.w/2,e.x));
-    if(e.y>H+60){enemies.splice(i,1);continue;}
+    if(e.y>H+60){stageEscaped++;enemies.splice(i,1);continue;}
     if(e.cd<=0&&e.y>0&&e.y<H*0.88){
       enemyFire(e);
       const base=e.family==='drone'?0.7:e.family==='sniper'?1.9:e.family==='tank'?1.5:e.type==='fodder'?2.2:e.type==='aimed'?1.1:e.type==='spread'?1.5:1.0;
@@ -1658,6 +1907,10 @@ function update(dt){
     if(b.entered) bossFire(b);
     for(let j=pBullets.length-1;j>=0;j--){
       const pb=pBullets[j];
+      if(hitBossPods(pb)){
+        if(pb.pierce&&pb.pierce>0){pb.pierce--;pb.dmg*=0.85;} else pBullets.splice(j,1);
+        continue;
+      }
       if(Math.abs(pb.x-b.x)<b.w*.45+pb.r&&Math.abs(pb.y-b.y)<b.h*.45+pb.r){
         b.hp-=pb.dmg;b.flash=.15;explode(pb.x,pb.y,'#fff',4);
         if(pb.pierce&&pb.pierce>0){pb.pierce--;pb.dmg*=0.85;} else pBullets.splice(j,1);
@@ -1698,17 +1951,37 @@ function update(dt){
       }
       else if(it.type==='B'){
         if(bombs<bombCap){bombs++;showBanner('炸弹 ×'+bombs,.55);}
-        else{addScore(120+stage*15,false);showBanner('炸弹已满 → 得分',.55);}
+        else{const bonus=1600+stage*200+cycle*150;addScore(bonus,false);showBanner('弹已满 → 得分 +'+bonus,.75);}
       }
       items.splice(i,1);updateHud();
     }
   }
   for(let i=medals.length-1;i>=0;i--){
     const m=medals[i];m.life-=dt;m.x+=m.vx*dt;m.y+=m.vy*dt;m.vx*=.97;
+    if(m.gold){m.flash=(m.flash||0)+dt*2.4;} // cycle brightness
     const d=Math.hypot(m.x-player.x,m.y-player.y);
     const mr=130+magnetLv*40;
     if(d<mr){m.x+=(player.x-m.x)*(5+magnetLv*0.4)*dt;m.y+=(player.y-m.y)*(5+magnetLv*0.4)*dt;}
-    if(d<34){addScore(m.val,false);medals.splice(i,1);continue;}
+    if(d<36){
+      let val=m.val||100;
+      let perfect=false;
+      if(m.gold&&m.tiers){
+        const ti=((m.flash|0)%4);
+        // cycle 0..3 maps to tiers; brightest = tier3 (2000) when flash phase in [3,4)
+        const phase=(m.flash%4);
+        let tier=0;
+        if(phase>=3) tier=3; else if(phase>=2) tier=2; else if(phase>=1) tier=1; else tier=0;
+        val=m.tiers[tier];
+        // stage/cycle soft scale without breaking flash readability
+        val=Math.floor(val*(1+Math.min(0.5,(stage-1)*0.02+(cycle-1)*0.05)));
+        perfect=(tier===3);
+        goldFlashTotal++;stageGoldTotal++;
+        if(perfect){goldFlashPerfect++;stageGoldPerfect++;}
+      }
+      addScore(val,false);
+      if(m.gold&&perfect) showBanner('金块 MAX '+val+'!',.45);
+      medals.splice(i,1);continue;
+    }
     if(m.life<=0||m.y>H+20) medals.splice(i,1);
   }
 
@@ -1843,7 +2116,23 @@ function draw(){
   for(const s of stars){ctx.globalAlpha=s.a;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(s.x,s.y,s.s,0,Math.PI*2);ctx.fill();}
   ctx.globalAlpha=1;
 
-  for(const m of medals){ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(m.x,m.y,9,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff8';ctx.beginPath();ctx.arc(m.x-2,m.y-2,2.5,0,Math.PI*2);ctx.fill();}
+  for(const m of medals){
+    if(m.gold){
+      const phase=(m.flash||0)%4;
+      const bright=phase>=3?1:phase>=2?0.75:phase>=1?0.5:0.32;
+      const tw=10+bright*6, th=5+bright*3;
+      ctx.save();
+      ctx.shadowColor='#ffd166';ctx.shadowBlur=6+bright*16;
+      ctx.fillStyle='rgba(255,'+Math.floor(180+75*bright)+','+Math.floor(40+60*bright)+','+(0.55+bright*0.45)+')';
+      ctx.fillRect(m.x-tw/2,m.y-th/2,tw,th);
+      ctx.strokeStyle=bright>0.9?'#fff':'#ffe9a8';ctx.lineWidth=1.5+bright;
+      ctx.strokeRect(m.x-tw/2,m.y-th/2,tw,th);
+      if(bright>0.85){ctx.fillStyle='#fff';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('2000',m.x,m.y-th/2-4);}
+      ctx.restore();
+    }else{
+      ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(m.x,m.y,9,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff8';ctx.beginPath();ctx.arc(m.x-2,m.y-2,2.5,0,Math.PI*2);ctx.fill();
+    }
+  }
   for(const it of items){
     const pulse=1+0.06*Math.sin(performance.now()/180+it.x);
     const R=it.r*pulse;
@@ -1902,6 +2191,18 @@ function draw(){
     const col=b.flash>0?'#fff':(b.kind==='mid'?'#ff6b35':'#ef476f');
     const sil=b.sil||(b.arch==='tank'?'tank':b.arch==='swarm'?'drone':b.arch==='sniper'?'sniper':b.arch==='laser'?'laser':b.arch==='dasher'?'dasher':b.arch==='finale'?'finale':'ring');
     drawPlane(b.x,b.y,b.w,b.h,col,b.kind==='mid'?'#ffd166':'#9b2226',true,sil);
+    if(b.pods){
+      for(const pod of b.pods){
+        if(!pod.alive) continue;
+        const px=b.x+pod.xoff,py=b.y+pod.yoff;
+        ctx.fillStyle=b.flash>0?'#fff':'#8a3a3a';
+        ctx.beginPath();ctx.ellipse(px,py,pod.r,pod.r*0.7,0,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#ffd166';ctx.lineWidth=1.5;ctx.stroke();
+        const pr=Math.max(0,pod.hp/pod.maxHp);
+        ctx.fillStyle='#222';ctx.fillRect(px-12,py-pod.r-6,24,3);
+        ctx.fillStyle='#ffd166';ctx.fillRect(px-12,py-pod.r-6,24*pr,3);
+      }
+    }
     ctx.fillStyle='#222';ctx.fillRect(b.x-b.w*.6,b.y-4,b.w*1.2,8);
     ctx.restore();
     const bw=W*.7,ratio=Math.max(0,b.hp/b.maxHp);
@@ -1909,7 +2210,16 @@ function draw(){
     ctx.fillStyle=b.phase>=3?'#ef476f':b.phase===2?'#ffd166':'#4ecdc4';
     ctx.fillRect((W-bw)/2,18,bw*ratio,8);
     ctx.fillStyle='#fff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
-    ctx.fillText(b.name+'  P'+b.phase+'/'+b.phases,(W)/2,14);
+    ctx.fillText(b.name+'  P'+b.phase+'/'+b.phases+(b.gunLoss?(' ·部位-'+b.gunLoss):''),(W)/2,14);
+  }
+  drawSecret();
+  if(gradeFlashT>0&&gradeFlashTxt){
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,gradeFlashT);
+    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(W*0.1,H*0.18,W*0.8,36);
+    ctx.fillStyle='#ffd166';ctx.font='bold 14px sans-serif';ctx.textAlign='center';
+    ctx.fillText(gradeFlashTxt,W/2,H*0.18+23);
+    ctx.restore();
   }
 
   if(state==='play'||state==='pause'||state==='over'||state==='dying'){
@@ -2058,7 +2368,7 @@ async function submitRankScore(){
   if(msg) msg.textContent='提交中…';
   try{
     const shipName=(player&&player.ship&&player.ship.name)||'';
-    const r=await fetch('/api/ranks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,score,stage,cycle,ship:shipName})});
+    const r=await fetch('/api/ranks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,score,stage,cycle,ship:shipName,secretsFound,goldFlashPerfect,grades:stageGrades.slice(-15)})});
     const data=await r.json();
     if(r.status===429){if(msg) msg.textContent='提交太快，稍等几秒';return;}
     if(!data.ok){if(msg) msg.textContent='提交失败：'+(data.error||'unknown');return;}
