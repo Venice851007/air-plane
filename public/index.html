@@ -245,7 +245,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-loot4';
+const GAME_VER='2026.09.22-loot5';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=300,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -703,22 +703,69 @@ function addScore(n,prox){
 }
 
 function dropLoot(x,y,kind){
-  // kind0 小兵：不掉任何增益（仅少量奖牌）
-  // kind1 精英：随机 1~3 个增益
-  // kind2+ Boss/中型：随机 3~5 个增益
+  // kind0 小兵：仅奖牌
+  // kind1 精英：保底1个（缺口加权）+30%再+1
+  // kind2 中型：固定2个（至少1个火力或僚）
+  // kind3+ Boss：固定3个（必含火力或僚）+再随机0~2，总量3~5
+  const medal=function(n,base){
+    for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*28,y:y+(Math.random()-.5)*16,vy:65+Math.random()*45,vx:(Math.random()-.5)*55,life:5,val:Math.floor((base+stage*12)*(1+(cycle-1)*0.1))});
+  };
+  const pushIt=function(t,ox,oy){
+    items.push({type:t,x:x+(ox||0)+(Math.random()-.5)*18,y:y+(oy||0)+(Math.random()-.5)*14,vy:48+Math.random()*22,vx:(Math.random()-.5)*50,life:11,r:18});
+  };
+  const pickNeed=function(preferCombat){
+    // 缺啥加权：火力 > 僚机 > 炸弹；已满仍可掉（拾取时转分），但权重很低
+    const opts=[];
+    const needP=power<powerCap;
+    const needW=(wingLevel<wingCap)||(aliveWingmen<wingLevel);
+    const needB=bombs<bombCap;
+    opts.push({t:'P',w:needP?6:(preferCombat?1:0.4)});
+    opts.push({t:'W',w:needW?5:(preferCombat?1:0.4)});
+    opts.push({t:'B',w:needB?2.5:0.5});
+    if(preferCombat){
+      for(const o of opts){ if(o.t==='B') o.w*=0.55; else o.w*=1.25; }
+    }
+    let sum=0; for(const o of opts) sum+=o.w;
+    let r=Math.random()*sum;
+    for(const o of opts){ r-=o.w; if(r<=0) return o.t; }
+    return 'P';
+  };
+  const pickPW=function(){
+    const needP=power<powerCap, needW=(wingLevel<wingCap)||(aliveWingmen<wingLevel);
+    if(needP&&needW) return Math.random()<0.55?'P':'W';
+    if(needP) return 'P';
+    if(needW) return 'W';
+    return Math.random()<0.5?'P':'W';
+  };
+
   if(kind<=0){
-    const n=1+((Math.random()*2)|0);
-    for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*24,y:y+(Math.random()-.5)*14,vy:65+Math.random()*40,vx:(Math.random()-.5)*50,life:4.5,val:Math.floor((30+stage*10)*(1+(cycle-1)*0.1))});
+    medal(1+((Math.random()*2)|0),30);
     return;
   }
-  const count=kind>=2?(3+((Math.random()*3)|0)):(1+((Math.random()*3)|0));
-  const pool=['P','B','W'];
-  for(let i=0;i<count;i++){
-    const t=pool[(Math.random()*pool.length)|0];
-    items.push({type:t,x:x+(Math.random()-.5)*50,y:y+(Math.random()-.5)*36,vy:45+Math.random()*25,vx:(Math.random()-.5)*55,life:10,r:18});
+  if(kind===1){
+    pushIt(pickNeed(false),0,0);
+    if(Math.random()<0.30) pushIt(pickNeed(false),(Math.random()-.5)*30,(Math.random()-.5)*20);
+    medal(2+((Math.random()*2)|0),50);
+    return;
   }
-  const n=2+((Math.random()*3)|0)+kind;
-  for(let i=0;i<n;i++) medals.push({x:x+(Math.random()-.5)*32,y:y+(Math.random()-.5)*18,vy:70+Math.random()*50,vx:(Math.random()-.5)*60,life:5,val:Math.floor((50+stage*15)*(1+(cycle-1)*0.12))});
+  if(kind===2){
+    // 中型：固定2，至少1个P/W
+    let a=pickNeed(true), b=pickNeed(true);
+    if(a!=='P'&&a!=='W'&&b!=='P'&&b!=='W') b=pickPW();
+    pushIt(a,-14,0); pushIt(b,14,0);
+    medal(3+((Math.random()*2)|0),70);
+    return;
+  }
+  // Boss：3~5，前3个保底，其中至少1个P或W
+  const bag=[pickPW(), pickNeed(true), pickNeed(true)];
+  // 再随机 0~2
+  const extra=(Math.random()*3)|0;
+  for(let i=0;i<extra;i++) bag.push(pickNeed(false));
+  for(let i=0;i<bag.length;i++){
+    const ang=-Math.PI/2+(i-(bag.length-1)/2)*0.45;
+    pushIt(bag[i],Math.cos(ang)*36,Math.sin(ang)*22);
+  }
+  medal(4+((Math.random()*3)|0),90);
 }
 
 
@@ -1628,7 +1675,7 @@ function update(dt){
         }
         if(b.hp<=0){
           addScore(b.score,false);explode(b.x,b.y,'#ffd166',50);shake=.7;flashA=.4;
-          dropLoot(b.x,b.y,2); // Boss/中型：3~5 个随机增益
+          dropLoot(b.x,b.y,b.kind==='mid'?2:3);
           boss=null;showBanner(b.kind==='mid'?'威胁排除':'Boss 击破！',2);updateHud();flushWaves();
         }
       }
