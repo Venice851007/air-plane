@@ -246,7 +246,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-read2';
+const GAME_VER='2026.09.22-bossClear1';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=180,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -827,10 +827,13 @@ function mkEnemy(o){
   }
 }
 function spawnN(base){
-  // read2: fewer bodies on screen → fewer overlapping aim streams
-  const stageBonus=Math.min(1,(stage/8)|0);
-  const cycleBonus=Math.min(2,(cycleTier()*0.5)|0);
-  return Math.max(1, base+stageBonus+cycleBonus);
+  // bossClear1: cut pack sizes; even leaner after mid (pressure window)
+  let stageBonus=Math.min(1,(stage/10)|0);
+  let cycleBonus=Math.min(1,(cycleTier()*0.4)|0);
+  let n=Math.max(1, (base|0)+stageBonus+cycleBonus);
+  if(midDone && !bossSpawned) n=Math.max(1, Math.ceil(n*0.55)); // pressure waves half
+  if(boss) n=1; // should not spawn packs in boss, but belt+suspenders
+  return n;
 }
 function noteSpawn(n){stageSpawned+=(n|0);}
 function spawnDeathBullets(x,y,kind){
@@ -988,7 +991,41 @@ function midHpMult(){
   return (2.2 + (stage-1)/14*0.45)*armorStageSoft();
 }
 
+
+
+function cullEscortsDuringBoss(){
+  if(!boss) return;
+  // keep at most 2 elites on screen with boss; delete fodder
+  let elites=0;
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];
+    if(e.kind>=1 || e.type==='elite'){
+      elites++;
+      if(elites>2){enemies.splice(i,1);}
+    }else{
+      enemies.splice(i,1);
+    }
+  }
+}
+
+function clearFieldForBoss(keepElite){
+  // Boss/中型登场时清掉场上杂兵，避免「Boss+小兵齐射」糊屏
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];
+    if(keepElite && (e.kind>=1 || e.type==='elite')) continue;
+    // score a little so it doesn't feel like cheat-delete
+    if(e.score) addScore(Math.floor((e.score||50)*0.15), false);
+    enemies.splice(i,1);
+  }
+  // thin bullets already on screen (keep some for drama)
+  if(eBullets.length>40){
+    eBullets.splice(0, eBullets.length-40);
+  }
+}
+
 function spawnMid(){
+  clearFieldForBoss(false);
+
   const arch=stageArch();
   const meta=BOSS_ARCH[arch]||BOSS_ARCH.ring;
   const nm=(stage>=10?(MID_ALT[arch]||meta.midName):meta.midName);
@@ -1001,6 +1038,8 @@ function spawnMid(){
   showBanner('⚠ '+boss.name+(cycle>1?' · 轮回'+cycle:''),2);
 }
 function spawnBoss(){
+  clearFieldForBoss(false);
+
   const arch=stageArch();
   const meta=BOSS_ARCH[arch]||BOSS_ARCH.ring;
   let baseName=(stage>=8?(BOSS_ALT[arch]||meta.bossName):meta.bossName);
@@ -1152,7 +1191,7 @@ function bossFire(b){
   }else if(arch==='tank'){
     if(b.cd<=0){eRing(b.x,b.y,9+pat*2,90,4.5,b.t*1.1,2);const a=aim(b.x,b.y,150);eShot(b.x-22,b.y+24,a.vx,a.vy,7);eShot(b.x+22,b.y+24,a.vx,a.vy,7);if(ph>=3){eShot(b.x,b.y+28,a.vx,a.vy,8);eRing(b.x,b.y,8+pat,70,3.5,b.t*-1,1);}b.cd=(ph>=3?0.6:0.85)*cFire();b.tell=.45;}
   }else if(arch==='swarm'){
-    if(b.cd<=0){const n=(ph>=3?16:10)+pat*2;for(let i=0;i<n;i++){const ang=-Math.PI*.55+Math.random()*Math.PI*1.1;const sp=130+Math.random()*70;eShot(b.x+(Math.random()-.5)*30,b.y+10,Math.cos(ang)*sp,Math.sin(ang)*sp+35,3);}if(ph>=2&&Math.random()<0.45){ /* escort drip */ if(enemies.length<18) droneElite(1);}b.cd=(ph===1?0.65:0.42)*cFire();b.tell=.25;}
+    if(b.cd<=0){const n=(ph>=3?16:10)+pat*2;for(let i=0;i<n;i++){const ang=-Math.PI*.55+Math.random()*Math.PI*1.1;const sp=130+Math.random()*70;eShot(b.x+(Math.random()-.5)*30,b.y+10,Math.cos(ang)*sp,Math.sin(ang)*sp+35,3);}/* read bossClear1: no escort drip during boss — was enemies<18 spam */b.cd=(ph===1?0.65:0.42)*cFire();b.tell=.25;}
   }else if(arch==='laser'){
     if(b.cd<=0){b.tell=.55;b.sweepAng=(b.sweepAng|| -Math.PI*.2)+0.35+ph*0.05;const base=b.sweepAng;const lanes=4+pat;for(let i=0;i<lanes;i++){const ang=base+i*(Math.PI*0.9/(lanes-1))-Math.PI*.45; // fan sweep with gaps via skip
       if(i===((lanes/2)|0)) continue; // center safe lane
@@ -1696,6 +1735,8 @@ function flushWaves(){
       waveIdx++;
       continue;
     }
+    // bossClear1: Boss/中型在场时不再追加小兵波
+    if(boss){waveIdx++;continue;}
     if(w.fn) w.fn();
     waveIdx++;
   }
@@ -1826,7 +1867,7 @@ function update(dt){
     items.push({type:typ,x:ix,y:iy,vy:28,vx:0,life:12,r:18});
     showBanner('补给抵达',1.8);
   }
-  flushWaves();
+  flushWaves();cullEscortsDuringBoss();
   const script=activeWaves||STAGES[stage-1];
   if(bossSpawned&&!boss&&enemies.length===0&&eBullets.length<8&&stageT>script.waves[script.waves.length-1].t+1.2){
     nextStage();return;
@@ -2056,7 +2097,7 @@ function update(dt){
         if(b.hp<=0){
           addScore(b.score,false);explode(b.x,b.y,'#ffd166',50);shake=.7;flashA=.4;
           dropLoot(b.x,b.y,b.kind==='mid'?2:3);
-          boss=null;showBanner(b.kind==='mid'?'威胁排除':'Boss 击破！',2);updateHud();flushWaves();
+          boss=null;showBanner(b.kind==='mid'?'威胁排除':'Boss 击破！',2);updateHud();flushWaves();cullEscortsDuringBoss();
         }
       }
     }
