@@ -30,6 +30,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 .hud .pwr{color:#a8e6ff}
 .hud .bombs{color:#ff9f1c}
 .hud .wing{color:#c77dff}
+.hud .rank{color:#ff8fa3;font-size:.62rem;letter-spacing:1px;opacity:.75}
 .hud-bar{margin-top:4px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
 .hud-bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4ecdc4,#ffd166);border-radius:3px}
 .footer-links{margin-top:20px;font-size:.72rem;line-height:1.8}
@@ -115,7 +116,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 <div id="wrap">
   <div class="hud" id="hud" style="display:none">
     <div class="hud-row">
-      <div><div class="score" id="scoreHud">得分 0</div><div class="stage" id="stageHud">关卡 1</div></div>
+      <div><div class="score" id="scoreHud">得分 0</div><div class="stage" id="stageHud">关卡 1</div><div class="rank" id="rankHud">RANK ▮▯▯▯▯</div></div>
       <div style="text-align:right">
         <div class="lives" id="livesHud">❤❤❤</div>
         <div class="pwr" id="pwrHud">火力 Lv1</div>
@@ -250,7 +251,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.26-review2';
+const GAME_VER='2026.09.26-hard1';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=180,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -518,6 +519,33 @@ function cycleTier(){return Math.min(cycle-1, CYCLE_SOFT) + Math.max(0,cycle-1-C
 function cMult(){return 1+cycleTier()*0.16;}          // HP / score / spawn lean (loop2+)
 function cFire(){return 1/(1+cycleTier()*0.04);} // read2: less fire-rate ramp      // shot interval shrink
 function cSpd(){return 1+Math.min(0.28,cycleTier()*0.08);} // read2: slower bullets
+/* ===== hard1: 动态难度 Rank（彩京式）0–100 =====
+ * 上升：存活时间（连续不死 >90s 加速）、得分、奖牌/金块、火力与僚机等级（装备项实时计入，最多 30）。
+ * 下降：死亡（累计值 ×0.6 再 -12，且装备项随掉火力/僚机下降）、炸弹 -2。每局重置。
+ * 作用：敌弹速度/射速最多 +25%，精英出现率、杂兵数量小幅上升，精英/大型 HP 最多 +10%（Boss +5%）。
+ * 与轮回倍率叠乘后封顶 ×1.45，保证可躲。 */
+let rankPts=0,rankAlive=0,rankLvShown=0;
+const RANK_PTS_MAX=70,RANK_GEAR_MAX=30,RANK_CAP_COMB=1.45;
+function rankGear(){return Math.min(RANK_GEAR_MAX,Math.max(0,power-START_POWER)*3+Math.max(0,aliveWingmen)*2);}
+function rankVal(){return Math.max(0,Math.min(100,rankPts+rankGear()));}
+function rankK(){return rankVal()/100;}
+function rankLevel(){return Math.min(5,1+Math.floor(rankVal()/20));}
+function rankSpdMul(){return Math.min(1+0.25*rankK(),RANK_CAP_COMB/cSpd());}
+function rankFireMul(){return Math.min(1+0.25*rankK(),RANK_CAP_COMB*cFire());}
+function rankHpMul(w){return 1+(w==null?0.10:w)*rankK();}
+function rankAdd(v){rankPts=Math.max(0,Math.min(RANK_PTS_MAX,rankPts+v));}
+function rankTick(dt){rankAlive+=dt;rankAdd(dt*(0.03+(rankAlive>90?0.02:0)));}
+function rankOnDeath(){rankPts=Math.max(0,rankPts*0.6-12);rankAlive=0;}
+function rankOnBomb(){rankAdd(-2);}
+function rankReset(){rankPts=0;rankAlive=0;rankLvShown=0;}
+function rankHudTxt(){const lv=rankLevel();return 'RANK '+'▮'.repeat(lv)+'▯'.repeat(5-lv);}
+function rankElite(){
+  const th=(STAGES[stage-1]&&STAGES[stage-1].theme)||'scout';
+  if(th==='drone'||th==='sniper') mkEnemy({family:'drone',type:'elite',mode:'elite',x:45+Math.random()*(W-90),y:-55,w:36,h:34,
+    hp:Math.ceil(10+stage*2.5),maxHp:0,score:480*stage,spd:70+stage*10,t:0,phase:0,cd:0.9,kind:1,col:'#145a32',wing:'#f1c40f',burst:3,eliteGlow:1});
+  else mkEnemy({family:'scout',type:'elite',mode:'elite',x:50+Math.random()*(W-100),y:-60,w:48,h:40,
+    hp:Math.ceil((12+stage*3)*1.05),maxHp:0,score:520*stage,spd:46+stage*6,t:0,phase:0,cd:1.3,kind:1,col:'#1a5276',wing:'#1abc9c',eliteGlow:1});
+}
 function cPat(){return Math.min(2, 1+((cycleTier()*0.4)|0));} // extra pattern richness 1..3
 function deathBulletChance(){ // Psikyo corpse bullets loop2+
   if(cycle<2) return 0;
@@ -699,7 +727,7 @@ function updateWingmen(dt){
 
 function resetRun(){
   const ship=SHIPS[selectedShip];
-  player.ship=ship;score=0;lives=MAX_LIVES;revivesUsed=0;power=START_POWER;bombs=BASE_BOMB_CAP;bombCap=BASE_BOMB_CAP;wingLevel=0;aliveWingmen=0;wingCap=BASE_WING_CAP;
+  rankReset();player.ship=ship;score=0;lives=MAX_LIVES;revivesUsed=0;power=START_POWER;bombs=BASE_BOMB_CAP;bombCap=BASE_BOMB_CAP;wingLevel=0;aliveWingmen=0;wingCap=BASE_WING_CAP;
   speedLv=0;speedCap=BASE_SPEED_CAP;powerCap=BASE_POWER_CAP;fireSoft=0;magnetLv=0;shieldStock=0;
   extendIdx=0;combo=0;comboT=0;stage=1;cycle=1;stageT=0;waveT=0;waveIdx=0;boss=null;midDone=false;bossSpawned=false;bombLock=0;hyperCd=0;
   clearInput();
@@ -741,6 +769,7 @@ function updateHud(){
   document.getElementById('pwrHud').textContent=pwrTxt;
   document.getElementById('wingHud').textContent=wingLevel<=0?('僚机 0/'+wingCap):('僚机 '+aliveWingmen+'/'+wingLevel+'·限'+wingCap);
   document.getElementById('bombHud').textContent='炸弹 ×'+bombs;
+  {const rh=document.getElementById('rankHud');if(rh){rankLvShown=rankLevel();rh.textContent=rankHudTxt();}}
   if(els.hud&&els.hud.style.display!=='none'){const hb=els.hud.getBoundingClientRect(),wr=wrap.getBoundingClientRect();if(hb.height>0) hudBottom=Math.round(hb.bottom-wr.top);}
   els.chargeBar.style.width=(Math.min(1,charge/player.ship.chargeTime)*100)+'%';
 }
@@ -749,7 +778,7 @@ function addScore(n,prox){
   let a=prox?Math.floor(n*1.5):n;
   if(combo>5) a=Math.floor(a*(1+Math.min(combo,30)*0.02));
   if(cycle>1) a=Math.floor(a*(1+Math.min(cycle-1,8)*0.08));
-  score+=a;combo++;comboT=1.5;
+  score+=a;combo++;comboT=1.5;rankAdd(a/250000); // hard1: 得分推高 Rank
   while(extendIdx<EXTENDS.length&&score>=EXTENDS[extendIdx]){
     extendIdx++;lives=Math.min(lives+1,9);showBanner('EXTEND! 残机+1',1.8);
   }
@@ -853,6 +882,7 @@ function mkEnemy(o){
   let m=cMult()*armorStageSoft();
   if(o.kind>=1 || o.type==='elite' || o.family==='tank') m*=2.35;
   else if(o.kind===0) m*=1.25;
+  if(o.kind>=1||o.type==='elite'||o.family==='tank') m*=rankHpMul(); // hard1: Rank 精英/大型 HP 最多 +10%
   if(o.hp){o.hp=Math.max(1,Math.ceil(o.hp*m));o.maxHp=o.hp;}
   if(o.score) o.score=Math.floor(o.score*(1+(cycle-1)*0.1));
   if(o.spd) o.spd*=(1+Math.min(0.25,cycleTier()*0.05));
@@ -867,6 +897,7 @@ function spawnN(base){
   let stageBonus=Math.min(1,(stage/10)|0);
   let cycleBonus=Math.min(1,(cycleTier()*0.4)|0);
   let n=Math.max(1, (base|0)+stageBonus+cycleBonus);
+  if(base>=3&&Math.random()<0.6*rankK()) n++; // hard1: Rank 杂兵数量小幅上升
   if(midDone && !bossSpawned) n=Math.max(1, Math.ceil(n*0.55)); // pressure waves half
   if(boss) n=1; // should not spawn packs in boss, but belt+suspenders
   return n;
@@ -1023,10 +1054,11 @@ function armorStageSoft(){
 function bossHpTaper(){
   // review1: S4–15 Boss 血量按实测 DPS 下调（参考配装 S4–9 P4W4 / S10–15 P6W5，对准普通射击 ~32s，
   // 实战含走位+蓄力约 45–75s）。S1–3 不动。
-  const dash=(stageArch()==='dasher')?0.7:1; // review1: 疾影类高速位移更难命中（已降速+隔轮冲刺），HP 再打七折
+  // hard1: 回调到原版的 ~78–92%（S4 0.92 → S14/15 0.78），疾影类保留部分折扣 ×0.68（高速位移难命中）
+  const dash=(stageArch()==='dasher')?0.68:1;
   if(stage<=3) return 1*dash;
-  if(stage>=15) return 0.5;
-  return (0.92-(stage-4)/10*0.37)*dash; // S4 0.92 → S14 0.55
+  if(stage>=15) return 0.78;
+  return (0.92-(stage-4)/10*0.14)*dash;
 }
 function bossHpMult(){
   // tough1: ~2.3 early → ~2.9 late (was ~1.4→1.8), still *armorStageSoft
@@ -1034,7 +1066,7 @@ function bossHpMult(){
 }
 function midHpMult(){
   // tough1: mid must survive 2–3 hypers; review1: 中型按 Boss 下调幅度的 60% 同步
-  return (2.2 + (stage-1)/14*0.45)*armorStageSoft()*(1-(1-bossHpTaper())*0.6);
+  return (2.2 + (stage-1)/14*0.45)*armorStageSoft()*(1-(1-bossHpTaper())*0.4); // hard1: 中型下调幅度 60%→40%
 }
 
 
@@ -1077,7 +1109,7 @@ function spawnMid(){
   const meta=BOSS_ARCH[arch]||BOSS_ARCH.ring;
   const nm=(stage>=10?(MID_ALT[arch]||meta.midName):meta.midName);
   let hp=(90+stage*45)*midHpMult();
-  hp=Math.ceil(hp*cMult());
+  hp=Math.ceil(hp*cMult()*rankHpMul(0.05));
   const vx=arch==='dasher'?90:arch==='tank'?70:95; // review1: dasher 150→90（子弹飞行 ~1s，原速几乎打不中）
   boss={kind:'mid',name:nm,theme:STAGES[stage-1].theme,arch,sil:meta.sil,phase:1,phases:2,x:W/2,y:-90,w:arch==='tank'?84:76,h:arch==='tank'?66:60,hp,maxHp:hp,
     t:0,cd:0.7*cFire(),vx,entered:false,tell:0,score:Math.floor(4000*stage*(1+(cycle-1)*0.12)),flash:0,dashT:0};
@@ -1095,7 +1127,7 @@ function spawnBoss(){
   if(arch==='finale'||stage===15) baseName='终焉·苍穹审判';
   let hp=(200+stage*90)*bossHpMult();
   if(stage===15) hp*=1.2; // climax on top of late boost
-  hp=Math.ceil(hp*cMult());
+  hp=Math.ceil(hp*cMult()*rankHpMul(0.05));
   const phases=arch==='finale'||stage===15?4:(stage>=10?3:3);
   const big=stage===15||arch==='finale';
   const vx=arch==='dasher'?75:arch==='tank'?55:arch==='swarm'?85:70; // review1: dasher 130→75
@@ -1183,7 +1215,8 @@ function eShot(x,y,vx,vy,r){
   if(eBullets.length>=MAX_EBUL) return;
   // read2: probabilistic reject when crowded (keeps corridors)
   if(eBullets.length>90 && Math.random()>fireThrottle()) return;
-  const m=cSpd()*0.92; // slight global slow
+  if(eBullets.length>118 && Math.random()<0.7) return; // hard1: 高 Rank 时的软上限，峰值维持在 review1 可读水平
+  const m=cSpd()*0.92*rankSpdMul(); // slight global slow; hard1: Rank 弹速
   eBullets.push({x,y,vx:vx*m,vy:vy*m,r:Math.max((r||3.5)*1.0,3.4),color:'#ff2bd6',aimed:1});
 }
 /** Ring with intentional gaps (safe corridors). gapCount wedges skipped. */
@@ -1526,7 +1559,7 @@ function fireWingmenHyper(scale){
 const BOMB_LOCK=0.6,BOMB_REFILL_DEATH=2,BOMB_REFILL_REVIVE=3;
 function doBomb(){
   if(bombs<=0||state!=='play'||bombLock>0) return;
-  bombs--;bombLock=BOMB_LOCK;updateHud();shake=.55;flashA=.5;
+  bombs--;bombLock=BOMB_LOCK;rankOnBomb();updateHud();shake=.55;flashA=.5;
   // review1: 范围内小兵（kind0）保底清除
   const clearSmall=e=>{if((e.kind|0)===0) e.hp=Math.min(e.hp,0);};
   const s=player.ship, bid=s.bombId||'strike', now=performance.now();
@@ -1617,7 +1650,7 @@ function hitPlayer(){
     updateHud();
     return;
   }
-  lives--;
+  lives--;rankOnDeath(); // hard1
   bombs=Math.max(bombs,Math.min(bombCap,BOMB_REFILL_DEATH)); // review1: 死亡补弹
   const drop=Math.max(0,power-1);
   power=Math.max(MIN_POWER,power-2);
@@ -1865,6 +1898,7 @@ function flushWaves(){
     // review1 G2: Boss/中型在场时等待（不再丢弃波次）；中型期间波次时钟本就暂停
     if(boss) break;
     if(w.fn) w.fn();
+    if(w.fn&&Math.random()<0.25*rankK()) rankElite(); // hard1: Rank 精英出现率
     waveIdx++;
   }
   // 兜底：波次耗尽、场清空、中型已打完却还没出 Boss → 强制出 Boss
@@ -1974,6 +2008,7 @@ function killEnemy(i,e){
 // review1 B2/G1: Boss 阶段切换与击破统一入口（只结算一次，绝不误删新出场的 Boss）
 function bossCheckPhase(b){
   if(!b||b.dead) return;
+  if(b.rageInv>0&&b.rageHp) b.hp=Math.max(b.hp,b.rageHp); // hard1: 狂暴过场无敌
   const ratio=b.hp/b.maxHp;
   if(b.kind==='mid'&&b.phase===1&&ratio<.5){b.phase=2;showBanner('阶段 2',1.2);eBullets=[];b.tell=.5;}
   if(b.kind==='stage'){
@@ -1985,6 +2020,44 @@ function bossCheckPhase(b){
       if(b.phase===1&&ratio<.66){b.phase=2;showBanner('Boss 阶段 2',1.3);eBullets=[];b.tell=.5;}
       if(b.phase===2&&ratio<.33){b.phase=3;showBanner('Boss 阶段 3',1.3);eBullets=[];b.tell=.5;}
     }
+    bossRage(b);
+  }
+}
+// hard1: 关底 Boss 血量 <50% → 狂暴（第二形态）：1s 无敌过场 + 闪光 + 警告字，追加本家族新弹幕，射速 +28%
+const RAGE_INV=1.0,RAGE_FIRE=1.28;
+function bossRage(b){
+  if(!b||b.dead||b.kind!=='stage'||b.rage) return;
+  if(b.hp/b.maxHp>=.5) return;
+  b.rage=true;b.rageInv=RAGE_INV;b.rageHp=Math.ceil(b.maxHp*0.5);b.hp=Math.max(b.hp,b.rageHp);
+  eBullets=[];b.warn=0;b.cd=Math.max(b.cd,RAGE_INV+0.35);b.tell=RAGE_INV;
+  flashA=Math.max(flashA,.35);shake=Math.max(shake,.45);explode(b.x,b.y,'#ef476f',30);
+  showBanner('⚠ '+b.name+' 狂暴化！',1.8);
+}
+function aimFan(b,half,spread,sp,r,skip0){
+  const a=aim(b.x,b.y,sp),base=Math.atan2(a.vy,a.vx),v=aimCap(sp);
+  for(let k=-half;k<=half;k++){if(skip0&&k===0)continue;const ang=base+k*spread;eShot(b.x,b.y+20,Math.cos(ang)*v,Math.sin(ang)*v,r);}
+}
+function bossRageFire(b){
+  if(eBullets.length>95) return; // hard1: 画面已密时不追加狂暴弹幕（保可读）
+  const arch=b.arch||'ring',n=(b.rageN=(b.rageN|0)+1);
+  if(arch==='ring'){ // 反向慢速环（留 3 道缺口）/ 交替自机狙三连
+    if(n%2) eRing(b.x,b.y,10,78,3.2,-b.t*1.3,3); else aimFan(b,1,.12,165,4.5);
+  }else if(arch==='sniper'){ // 紧密自机狙 + 两侧慢速帘
+    aimFan(b,1,.07,170,5);if(n%2===0){for(const i of [-5,-4,4,5]) eShot(b.x,b.y+14,i*26,110,3);}
+  }else if(arch==='tank'){ // 超慢大环（3 缺口）/ 重炮双发
+    if(n%2) eRing(b.x,b.y,10,80,4,b.t*.7,3); else aimFan(b,1,.3,140,6,true);
+  }else if(arch==='swarm'){ // 四臂螺旋（只取向下半圈）
+    b.spiralA=(b.spiralA||0)+0.5;
+    for(let i=0;i<4;i++){const ang=b.spiralA+i*Math.PI/2;if(Math.sin(ang)<-0.2)continue;eShot(b.x,b.y+12,Math.cos(ang)*115,Math.sin(ang)*115+20,3.4);}
+  }else if(arch==='laser'){ // 反向扫射三道
+    b.rSweep=(b.rSweep==null?Math.PI*.25:b.rSweep)-0.38;if(b.rSweep<-Math.PI*.25) b.rSweep=Math.PI*.25;
+    for(let k=-1;k<=1;k++){const ang=Math.PI/2+b.rSweep+k*0.28;eShot(b.x,b.y+22,Math.cos(ang)*165,Math.sin(ang)*165,4);}
+  }else if(arch==='dasher'){ // 冲刺尾焰：左右各 2 发横向扩散 + 自机狙
+    if(n%2) {for(const i of [-3,-2,2,3]) eShot(b.x,b.y+10,i*34,120,3.2);} else aimFan(b,0,0,175,5);
+  }else{ // 终焉：五臂螺旋 + 自机狙
+    b.spiralA=(b.spiralA||0)+0.42;
+    for(let i=0;i<5;i++){const ang=b.spiralA+i*Math.PI*2/5;if(Math.sin(ang)<-0.2)continue;eShot(b.x,b.y+14,Math.cos(ang)*120,Math.sin(ang)*120+15,3.4);}
+    if(n%3===0) aimFan(b,0,0,175,5.5);
   }
 }
 function killBoss(b){
@@ -2027,6 +2100,7 @@ function update(dt){
   stageT+=dt;
   if(!(boss&&boss.kind==='mid')) waveT+=dt; // review1 G2: 中型存活时波次时钟暂停
   if(bombLock>0) bombLock=Math.max(0,bombLock-dt);
+  rankTick(dt);if(rankLevel()!==rankLvShown){rankLvShown=rankLevel();const rh=document.getElementById('rankHud');if(rh) rh.textContent=rankHudTxt();}
   // Opening teaching drop (~22s, once per run) — do not stack with secret
   if(!openerLootDone&&stage===1&&cycle===1&&stageT>=22){
     openerLootDone=true;
@@ -2197,7 +2271,7 @@ function update(dt){
   for(let i=eBullets.length-1;i>=0;i--){const b=eBullets[i];b.x+=b.vx*dt;b.y+=b.vy*dt;if(b.y<-50||b.y>H+50||b.x<-50||b.x>W+50)eBullets.splice(i,1);}
 
   for(let i=enemies.length-1;i>=0;i--){
-    const e=enemies[i];e.t+=dt;e.cd-=dt;
+    const e=enemies[i];e.t+=dt;e.cd-=dt*rankFireMul(); // hard1: Rank 射速
     if(e.tell>0){
       e.tell-=dt;
       if(e.tell<=0&&e._pendingShot){
@@ -2241,7 +2315,8 @@ function update(dt){
   }
 
   if(boss){
-    const b=boss;b.t+=dt;b.cd-=dt;if(b.tell>0)b.tell-=dt;if(b.flash>0)b.flash-=dt;
+    const b=boss;b.t+=dt;if(b.rageInv>0){b.rageInv-=dt;b.cd=Math.max(b.cd,0.35);}
+    b.cd-=dt;if(b.tell>0)b.tell-=dt;if(b.flash>0)b.flash-=dt;
     if(!b.entered){b.y+=80*dt;if(b.y>=110){b.y=110;b.entered=true;}}
     else{
       if(b.dashT>0){b.dashT-=dt;b.x+=b.vx*1.7*dt;} // review1: 冲刺倍率 2.4→1.7
@@ -2254,7 +2329,9 @@ function update(dt){
       if(b.cd<=0&&!(b.warn>0)){b.warn=BOSS_WARN;b.tell=BOSS_WARN;}
       if(b.warn>0){
         b.warn-=dt;b.tell=Math.max(b.tell,b.warn);
-        if(b.warn<=0){b.warn=0;bossFire(b);b.tell=0;if(b.cd>0) b.cd=Math.max(0.12,b.cd-BOSS_WARN);}
+        if(b.warn<=0){b.warn=0;bossFire(b);if(b.rage&&boss===b) bossRageFire(b);b.tell=0;
+          // hard1: 整个周期（预警+冷却）按 Rank×狂暴 缩短；预警固定 0.3s 不缩
+          if(b.cd>0) b.cd=Math.max(0.12,b.cd/(rankFireMul()*(b.rage?RAGE_FIRE:1))-BOSS_WARN);}
       }
     }
     for(let j=pBullets.length-1;j>=0;j--){
@@ -2325,7 +2402,7 @@ function update(dt){
         val=Math.floor(val*(1+Math.min(0.5,(stage-1)*0.02+(cycle-1)*0.05)));
         perfect=(tier===3);
         goldFlashTotal++;stageGoldTotal++;
-        if(perfect){goldFlashPerfect++;stageGoldPerfect++;}
+        if(perfect){goldFlashPerfect++;stageGoldPerfect++;rankAdd(0.4);}
       }
       addScore(val,false);
       if(m.gold&&perfect) showBanner('金块 MAX '+val+'!',.45);
@@ -2540,7 +2617,8 @@ function draw(){
     const b=boss;
     ctx.save();
     if(b.tell>0){ctx.strokeStyle='rgba(255,209,102,'+(b.tell*2)+')';ctx.lineWidth=3;ctx.strokeRect(b.x-b.w/2-6,b.y-b.h/2-6,b.w+12,b.h+12);}
-    const col=b.flash>0?'#fff':(b.kind==='mid'?'#ff6b35':'#ef476f');
+    if(b.rage){const pa=b.rageInv>0?(0.35+0.35*Math.sin(b.t*40)):0.18+0.08*Math.sin(b.t*6);ctx.fillStyle='rgba(239,71,111,'+Math.max(0,pa)+')';ctx.beginPath();ctx.ellipse(b.x,b.y,b.w*.75,b.h*.7,0,0,Math.PI*2);ctx.fill();} // hard1: 狂暴光环
+    const col=(b.flash>0||(b.rageInv>0&&((b.t*20)|0)%2===0))?'#fff':(b.kind==='mid'?'#ff6b35':'#ef476f');
     const sil=b.sil||(b.arch==='tank'?'tank':b.arch==='swarm'?'drone':b.arch==='sniper'?'sniper':b.arch==='laser'?'laser':b.arch==='dasher'?'dasher':b.arch==='finale'?'finale':'ring');
     drawPlane(b.x,b.y,b.w,b.h,col,b.kind==='mid'?'#ffd166':'#9b2226',true,sil);
     if(b.pods){
@@ -2611,7 +2689,7 @@ function draw(){
     ctx.fillStyle=b.phase>=3?'#ef476f':b.phase===2?'#ffd166':'#4ecdc4';
     ctx.fillRect((W-bw)/2,by0,bw*ratio,8);
     ctx.fillStyle='#fff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
-    ctx.fillText(b.name+'  P'+b.phase+'/'+b.phases+(b.gunLoss?(' ·部位-'+b.gunLoss):''),(W)/2,by0-5);
+    ctx.fillText(b.name+'  P'+b.phase+'/'+b.phases+(b.rage?' · 狂暴':'')+(b.gunLoss?(' ·部位-'+b.gunLoss):''),(W)/2,by0-5);
   }
   if(flashA>0){ctx.fillStyle='rgba(239,71,111,'+flashA+')';ctx.fillRect(-20,-20,W+40,H+40);}
   ctx.restore();
