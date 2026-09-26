@@ -10,7 +10,7 @@
 <style>
 :root{--bg:#071018;--accent:#ff6b35;--accent2:#4ecdc4;--gold:#ffd166;--danger:#ef476f;--panel:rgba(7,16,24,.94);--cyan:#7ef9ff}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#fff;touch-action:none;user-select:none}
+html,body{-webkit-touch-callout:none;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#fff;touch-action:none;user-select:none}
 #wrap{position:relative;width:100%;height:100%;max-width:420px;margin:0 auto;background:#071018;box-shadow:0 0 40px rgba(0,0,0,.55)}
 canvas{display:block;width:100%;height:100%;cursor:crosshair}
 .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;background:var(--panel);z-index:10;padding:max(20px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));text-align:center;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain}
@@ -101,7 +101,11 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 .boost-pick{width:100%;max-width:340px;margin:10px 0;display:flex;flex-direction:column;gap:8px}
 .boost-card{padding:12px 14px;border-radius:12px;border:2px solid rgba(78,205,196,.4);background:rgba(20,40,60,.85);cursor:pointer;text-align:left}
-.boost-card:active{transform:scale(.98)}
+.boost-card:active,.boost-card.pressed{transform:scale(.98);border-color:#ffd166}
+/* review2: 按钮/强化卡不参与滚动手势，避免手指轻微移动被判定为滑动而吞掉点击 */
+.btn,.boost-card,.touch-ui .tbtn,#rankScreen button{touch-action:none;-webkit-touch-callout:none}
+.overlay:not(.hidden){animation:ovIn .18s ease-out}
+@keyframes ovIn{from{opacity:.4}to{opacity:1}}
 .boost-card .bt{font-weight:800;color:#ffd166;font-size:.95rem}
 .boost-card .bd{font-size:.72rem;color:#8ab4d4;margin-top:4px;line-height:1.4}
 .boost-hint{font-size:.7rem;color:#5a7a94;margin:6px 0 4px}
@@ -246,7 +250,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.26-review1';
+const GAME_VER='2026.09.26-review2';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=180,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -319,7 +323,7 @@ let gradeFlashT=0,gradeFlashTxt='';
 const keys=Object.create(null);
 // review1: 非触屏设备隐藏触屏按钮
 const TOUCH_UI=(window.matchMedia&&matchMedia('(pointer:coarse)').matches)||(navigator.maxTouchPoints|0)>0||('ontouchstart' in window);
-let ptrDown=false,ptrX=0,ptrY=0,ptrAX=0,ptrAY=0,shipAX=0,shipAY=0,touchBomb=false,touchBombTap=false,touchCharge=false;
+let ptrReanchor=false,uiOpenAt=0,ptrDown=false,ptrX=0,ptrY=0,ptrAX=0,ptrAY=0,shipAX=0,shipAY=0,touchBomb=false,touchBombTap=false,touchCharge=false;
 
 const player={x:0,y:0,w:34,h:42,ship:SHIPS[0]};
 let pBullets=[],eBullets=[],enemies=[],parts=[],items=[],stars=[],medals=[],clouds=[],wingmen=[],beams=[];
@@ -545,12 +549,12 @@ function buildShips(){
     const el=document.createElement('div');
     el.className='ship-card'+(i===selectedShip?' selected':'');
     el.innerHTML='<div class="swatch" style="background:linear-gradient(160deg,'+s.color+','+s.wing+')"></div><div><div class="name">'+s.name+'</div><div class="blurb">'+s.blurb+'</div><div class="wingline" style="color:#ffd166">'+s.chargeSkill+'</div><div class="wingline">'+s.wingSkill+'</div><div class="stats">速度 '+s.speed+' · 炸弹×'+BASE_BOMB_CAP+' · 蓄力 '+s.chargeTime.toFixed(1)+'s · 僚机增益</div></div>';
-    el.onclick=()=>{selectedShip=i;buildShips();};
+    bindTap(el,()=>{selectedShip=i;buildShips();});
     g.appendChild(el);
   });
 }
 
-function hideAll(){[els.start,els.select,els.pause,els.over,els.clear,els.ad,els.help,els.rank,els.boost].forEach(e=>{if(e)e.classList.add('hidden');});}
+function hideAll(){ptrReanchor=true;[els.start,els.select,els.pause,els.over,els.clear,els.ad,els.help,els.rank,els.boost].forEach(e=>{if(e)e.classList.add('hidden');});}
 function showTitle(){state='title';hideAll();els.start.classList.remove('hidden');els.hud.style.display='none';els.touch.style.display='none';}
 function showSelect(){state='select';hideAll();els.select.classList.remove('hidden');buildShips();els.hud.style.display='none';els.touch.style.display='none';}
 function showBanner(t,d){els.banner.textContent=t;els.banner.classList.add('show');bannerT=d||2.2;}
@@ -1636,7 +1640,7 @@ function showOver(isOver){
   const left=MAX_REVIVES-revivesUsed;
   document.getElementById('reviveLeft').textContent=left>0?'本局还可复活 '+left+' 次':'本局复活次数已用完';
   document.getElementById('btnRevive').style.display=left>0?'inline-block':'none';
-  hideAll();els.over.classList.remove('hidden');els.touch.style.display='none';
+  hideAll();uiOpenAt=performance.now();els.over.classList.remove('hidden');els.touch.style.display='none';
   prepareRankSubmitUi();
 }
 // review1: 轮回2+（进入轮回 / 续关）最低火力 3 + 2 架僚机，避免 P1 裸机打轮回 Boss（实测 600s+）
@@ -1654,7 +1658,7 @@ function reviveFromAd(){
   state='play';lastTime=performance.now();
 }
 function playFakeAd2(){
-  if(revivesUsed>=MAX_REVIVES) return;
+  if(revivesUsed>=MAX_REVIVES||state==='ad') return;
   revivesUsed++;state='ad';hideAll();els.ad.classList.remove('hidden');
   let secs=3+((Math.random()*3)|0);
   const cd=document.getElementById('adCountdown');cd.textContent=''+secs;
@@ -1872,7 +1876,7 @@ function flushWaves(){
 
 function openStageBoost(done){
   state='boost';
-  hideAll();
+  hideAll();uiOpenAt=performance.now(); // review2: 自动弹出的界面，250ms 内的按下视为误触
   if(els.boost) els.boost.classList.remove('hidden');
   if(els.hud) els.hud.style.display='none';
   if(els.touch) els.touch.style.display='none';
@@ -1897,7 +1901,7 @@ function openStageBoost(done){
     const el=document.createElement('div');
     el.className='boost-card';
     el.innerHTML='<div class="bt">'+o.title+'</div><div class="bd">'+o.desc+'</div>';
-    el.onclick=()=>applyBoostPick(o,done);
+    bindTap(el,()=>{if(state!=='boost') return;applyBoostPick(o,done);}); // review2: 一次选定，防重复触发
     box.appendChild(el);
   });
 }
@@ -2051,6 +2055,7 @@ function update(dt){
   if(ptrDown){
     const follow=want&&player.ship.chargeLock?Math.min(1,5*dt):Math.min(1,12*dt);
     const followY=want&&player.ship.chargeLock?Math.min(1,4*dt):Math.min(1,10*dt);
+    if(ptrReanchor){ptrAX=ptrX;ptrAY=ptrY;shipAX=player.x;shipAY=player.y;ptrReanchor=false;} // review2: 界面切换后手指仍按着 → 重新锚定，防止机体跳位
     const tgx=shipAX+(ptrX-ptrAX),tgy=shipAY+(ptrY-ptrAY);
     player.x+=(tgx-player.x)*follow;player.y+=(tgy-player.y)*followY;
   }
@@ -2638,10 +2643,45 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[keyName(e)]=false;if(e.key===' '||e.code==='Space'){keys[' ']=false;keys.Space=false;}});
 
+/* ===== review2: 移动端可靠点击 =====
+ * 以前按钮/强化卡只靠 click：手机上 ①另一根手指还按着屏幕（拖动操控）时浏览器不合成 click；
+ * ②手指轻微移动 >~15px 会被 .overlay 的 pan-y 判定为滚动而吞掉 click；③按下发生在旧画面、
+ * 抬起时新画面已弹出，会把 click 误投到新按钮（幽灵点击/误选）。
+ * 现在：按下与抬起都在同一元素上（按指针 id 配对，支持多指）且位移 < TAP_SLOP 即触发；
+ * 触发后 450ms 内全局吞掉浏览器补发的 click；按下不在该元素上的 click（幽灵点击）一律丢弃；
+ * 键盘触发（detail===0）仍走 click。 */
+const TAP_SLOP=40,UI_GUARD_MS=250;
+let lastDownEl=null,tapSuppressUntil=0;
+document.addEventListener('pointerdown',e=>{lastDownEl=e.target;},true);
+document.addEventListener('click',e=>{
+  if(performance.now()<tapSuppressUntil){e.preventDefault();e.stopPropagation();return;}
+  if(e.detail!==0&&lastDownEl&&e.target&&e.target.nodeType===1&&!e.target.contains(lastDownEl)&&!lastDownEl.contains(e.target)){
+    e.preventDefault();e.stopPropagation(); // 按下点不在此元素：界面在手指下切换造成的误投
+  }
+},true);
+function bindTap(el,fn){
+  if(!el) return;
+  const downs=new Map();
+  el.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse'&&e.button!==0) return;
+    if(performance.now()-uiOpenAt<UI_GUARD_MS) return;
+    downs.set(e.pointerId,{x:e.clientX,y:e.clientY});el.classList.add('pressed');
+  });
+  const end=e=>{downs.delete(e.pointerId);if(!downs.size) el.classList.remove('pressed');};
+  el.addEventListener('pointerup',e=>{
+    const d=downs.get(e.pointerId);end(e);
+    if(!d||Math.hypot(e.clientX-d.x,e.clientY-d.y)>TAP_SLOP) return;
+    tapSuppressUntil=performance.now()+450;
+    fn(e);
+  });
+  el.addEventListener('pointercancel',end);
+  el.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse') end(e);});
+  el.addEventListener('click',e=>{if(e.detail===0) fn(e);}); // 键盘 / 辅助功能
+}
 function ptrPos(e){const r=canvas.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
 canvas.addEventListener('pointerdown',e=>{
   if(state!=='play') return;ptrDown=true;const p=ptrPos(e);ptrX=p.x;ptrY=p.y;
-  ptrAX=p.x;ptrAY=p.y;shipAX=player.x;shipAY=player.y; // review1: 相对拖动（手指不遮挡机体）
+  ptrAX=p.x;ptrAY=p.y;shipAX=player.x;shipAY=player.y;ptrReanchor=false; // review1: 相对拖动（手指不遮挡机体）
   try{canvas.setPointerCapture(e.pointerId);}catch(_){}
 });
 canvas.addEventListener('pointermove',e=>{if(!ptrDown)return;const p=ptrPos(e);ptrX=p.x;ptrY=p.y;});
@@ -2665,7 +2705,7 @@ btnBomb.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation(
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>btnBomb.addEventListener(ev,()=>{touchBomb=false;}));
 btnCharge.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();touchCharge=true;btnCharge.classList.add('active');try{btnCharge.setPointerCapture(e.pointerId);}catch(_){}});
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>btnCharge.addEventListener(ev,()=>{touchCharge=false;btnCharge.classList.remove('active');}));
-document.getElementById('btnPause').addEventListener('click',e=>{e.stopPropagation();if(state==='play'){state='pause';hideAll();els.pause.classList.remove('hidden');els.touch.style.display='none';}});
+bindTap(document.getElementById('btnPause'),e=>{if(state==='play'){state='pause';hideAll();els.pause.classList.remove('hidden');els.touch.style.display='none';}});
 
 
 /* ===== Leaderboard ===== */
@@ -2747,25 +2787,25 @@ async function submitRankScore(){
 }
 
 
-document.getElementById('btnToSelect').onclick=showSelect;
+bindTap(document.getElementById('btnToSelect'),showSelect);
 
-document.getElementById('btnRanks').onclick=showRanks;
-document.getElementById('btnRankBack').onclick=showTitle;
-document.getElementById('tabWeek').onclick=()=>{rankPeriod='week';document.getElementById('tabWeek').classList.add('on');document.getElementById('tabMonth').classList.remove('on');fetchRanks('week');};
-document.getElementById('tabMonth').onclick=()=>{rankPeriod='month';document.getElementById('tabMonth').classList.add('on');document.getElementById('tabWeek').classList.remove('on');fetchRanks('month');};
-document.getElementById('btnSubmitRank').onclick=submitRankScore;
+bindTap(document.getElementById('btnRanks'),showRanks);
+bindTap(document.getElementById('btnRankBack'),showTitle);
+bindTap(document.getElementById('tabWeek'),()=>{rankPeriod='week';document.getElementById('tabWeek').classList.add('on');document.getElementById('tabMonth').classList.remove('on');fetchRanks('week');});
+bindTap(document.getElementById('tabMonth'),()=>{rankPeriod='month';document.getElementById('tabMonth').classList.add('on');document.getElementById('tabWeek').classList.remove('on');fetchRanks('month');});
+bindTap(document.getElementById('btnSubmitRank'),submitRankScore);
 
-document.getElementById('btnBackTitle').onclick=showTitle;
-document.getElementById('btnStart').onclick=startPlay;
-document.getElementById('btnHelpGo').onclick=dismissHelpAndPlay;
-document.getElementById('btnResume').onclick=()=>{state='play';hideAll();els.hud.style.display='block';els.touch.style.display=TOUCH_UI?'block':'none';lastTime=performance.now();};
-document.getElementById('btnPauseRestart').onclick=()=>{showSelect();};
-document.getElementById('btnPauseTitle').onclick=showTitle;
-document.getElementById('btnRestart').onclick=()=>{showSelect();};
-document.getElementById('btnOverTitle').onclick=showTitle;
-document.getElementById('btnRevive').onclick=playFakeAd2;
-document.getElementById('btnClearAgain').onclick=()=>{showSelect();};
-document.getElementById('btnClearTitle').onclick=showTitle;
+bindTap(document.getElementById('btnBackTitle'),showTitle);
+bindTap(document.getElementById('btnStart'),startPlay);
+bindTap(document.getElementById('btnHelpGo'),dismissHelpAndPlay);
+bindTap(document.getElementById('btnResume'),()=>{state='play';hideAll();els.hud.style.display='block';els.touch.style.display=TOUCH_UI?'block':'none';lastTime=performance.now();});
+bindTap(document.getElementById('btnPauseRestart'),()=>{showSelect();});
+bindTap(document.getElementById('btnPauseTitle'),showTitle);
+bindTap(document.getElementById('btnRestart'),()=>{showSelect();});
+bindTap(document.getElementById('btnOverTitle'),showTitle);
+bindTap(document.getElementById('btnRevive'),playFakeAd2);
+bindTap(document.getElementById('btnClearAgain'),()=>{showSelect();});
+bindTap(document.getElementById('btnClearTitle'),showTitle);
 document.querySelectorAll('.footer-links a').forEach(a=>a.addEventListener('click',e=>e.stopPropagation()));
 
 addEventListener('resize',resize);
