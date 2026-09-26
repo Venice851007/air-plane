@@ -246,7 +246,7 @@ canvas{display:block;width:100%;height:100%;cursor:crosshair}
 
 (function(){
 'use strict';
-const GAME_VER='2026.09.22-bossClear1';
+const GAME_VER='2026.09.26-bossadds1';
 const MAX_LIVES=3,MAX_REVIVES=3,MAX_POWER=8,MAX_WING=10,MAX_EBUL=180,MAX_PBUL=240;
 const MAX_SPEED_LV=8,MAX_FIRE_SOFT=3,MAX_MAGNET_LV=3,MAX_SHIELD_STOCK=2;
 const BASE_WING_CAP=4,BASE_BOMB_CAP=4,BASE_SPEED_CAP=4,BASE_POWER_CAP=4;
@@ -303,6 +303,7 @@ let speedLv=0,fireSoft=0,magnetLv=0,shieldStock=0;
 let wingCap=BASE_WING_CAP,bombCap=BASE_BOMB_CAP,speedCap=BASE_SPEED_CAP,powerCap=BASE_POWER_CAP;
 let invUntil=0,lastTime=0,flashA=0,shake=0,extendIdx=0,combo=0,comboT=0;
 let stage=1,cycle=1,stageT=0,waveIdx=0,boss=null,midDone=false,bossSpawned=false;
+let bossAddT=0; // bossadds1: Boss 战小兵计时（游戏时间）
 let bannerT=0,charge=0,charging=false,fireCd=0,wingFireCd=0,bombLatch=false;
 let pauseLatch=false,shieldPulse=0,shieldR=0;
 /* Psikyo fusion run/stage stats */
@@ -820,7 +821,7 @@ function mkEnemy(o){
   if(o.hp){o.hp=Math.max(1,Math.ceil(o.hp*m));o.maxHp=o.hp;}
   if(o.score) o.score=Math.floor(o.score*(1+(cycle-1)*0.1));
   if(o.spd) o.spd*=(1+Math.min(0.25,cycleTier()*0.05));
-  enemies.push(o);noteSpawn(1);
+  enemies.push(o);if(!o.bossAdd) noteSpawn(1); // bossadds1: Boss 小兵不计入关卡评级
   // loop2+: slight elite drip on fodder packs
   if(cycle>=2&&o.type==='fodder'&&Math.random()<Math.min(0.08,0.03+(cycle-2)*0.015)&&enemies.filter(e=>e.type==='elite').length<4){
     /* skip auto-elite here to avoid empty-field surprises; density via spawnN */
@@ -999,6 +1000,7 @@ function cullEscortsDuringBoss(){
   let elites=0;
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
+    if(e.bossAdd) continue; // bossadds1: Boss 战定时小兵不被清理
     if(e.kind>=1 || e.type==='elite'){
       elites++;
       if(elites>2){enemies.splice(i,1);}
@@ -1039,6 +1041,7 @@ function spawnMid(){
 }
 function spawnBoss(){
   clearFieldForBoss(false);
+  bossAddT=0; // bossadds1: 首波小兵在 Boss 登场约 10 秒后
 
   const arch=stageArch();
   const meta=BOSS_ARCH[arch]||BOSS_ARCH.ring;
@@ -1055,6 +1058,53 @@ function spawnBoss(){
     t:0,cd:0.55*cFire(),vx,entered:false,tell:0,score:Math.floor(14000*stage*(1+(cycle-1)*0.15)),flash:0,dashT:0,sweepAng:0};
   attachBossPods(boss);
   showBanner('⚔ BOSS · '+boss.name+(cycle>1?' · 第'+cycle+'轮回':''),2.4);
+}
+
+
+/* ===== bossadds1: Boss 战定时小兵 =====
+ * 仅限关底 Boss（kind==='stage'），中型不刷。每 10 秒（游戏时间，暂停/升级界面不计）
+ * 刷 4~8 个本关最弱的杂兵（fodder），分道错开入场，开火更稀疏、不带死亡弹。 */
+const BOSS_ADD_INTERVAL=10,BOSS_ADD_MIN=4,BOSS_ADD_MAX=8,BOSS_ADD_ALIVE_CAP=12;
+function bossAddFamily(){
+  const th=(STAGES[stage-1]&&STAGES[stage-1].theme)||'scout';
+  // 各主题关卡里实际出现的最弱小兵：scout/tank 关用侦察兵，drone/sniper 关用无人机
+  if(th==='scout'||th==='tank') return 'scout';
+  if(th==='drone'||th==='sniper') return 'drone';
+  return Math.random()<0.5?'scout':'drone'; // mix
+}
+function spawnBossAdds(){
+  if(!boss||boss.kind!=='stage') return 0;
+  let n=BOSS_ADD_MIN+((Math.random()*(BOSS_ADD_MAX-BOSS_ADD_MIN+1))|0); // 4..8
+  const alive=enemies.reduce((c,e)=>c+(e.bossAdd?1:0),0);
+  n=Math.max(BOSS_ADD_MIN,Math.min(n,BOSS_ADD_ALIVE_CAP-alive));
+  const fam=bossAddFamily();
+  const mode=Math.random()<0.5?'sine':'v';
+  // 分道：把屏宽切成 n 条道，每道一只并加小抖动，y 错开 → 留出躲避空隙
+  const margin=24,lane=(W-margin*2)/n;
+  const order=[];for(let i=0;i<n;i++) order.push(i);
+  for(let i=order.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;const t=order[i];order[i]=order[j];order[j]=t;}
+  for(let k=0;k<n;k++){
+    const i=order[k];
+    const x=margin+lane*(i+0.5)+(Math.random()-.5)*lane*0.4;
+    const y=-30-k*26-Math.random()*10;
+    const cd=1.4+Math.random()*1.2; // 入场后稍晚才开第一枪
+    if(fam==='drone'){
+      mkEnemy({family:'drone',type:'fodder',mode,x,y,w:18,h:18,hp:1,maxHp:1,score:80*stage,
+        spd:Math.min(260,140+stage*14),t:0,phase:Math.random()*8,cd,kind:0,col:'#58d68d',wing:'#82e0aa',burst:1,bossAdd:1});
+    }else{
+      mkEnemy({family:'scout',type:'fodder',mode,x,y,w:24,h:24,hp:1,maxHp:1,score:100*stage,
+        spd:80+stage*10,t:0,phase:Math.random()*6,cd,kind:0,col:'#5dade2',wing:'#85c1e9',bossAdd:1});
+    }
+  }
+  return n;
+}
+function updateBossAdds(dt){
+  if(!boss||boss.kind!=='stage'){bossAddT=0;return;}
+  bossAddT+=dt;
+  if(bossAddT>=BOSS_ADD_INTERVAL){
+    bossAddT-=BOSS_ADD_INTERVAL;
+    spawnBossAdds();
+  }
 }
 
 
@@ -1841,8 +1891,8 @@ function killEnemy(i,e){
   addScore(e.score,Math.hypot(e.x-player.x,e.y-player.y)<70);
   const col=e.col||(e.type==='elite'?'#ff6b35':e.type==='spread'?'#c77dff':'#4ecdc4');
   explode(e.x,e.y,col,e.kind?28:14);dropLoot(e.x,e.y,e.kind);
-  stageKills++;
-  if((e.kind|0)<=1) spawnDeathBullets(e.x,e.y,e.kind|0);
+  if(!e.bossAdd) stageKills++;
+  if((e.kind|0)<=1&&!e.bossAdd) spawnDeathBullets(e.x,e.y,e.kind|0); // bossadds1: Boss 小兵不带死亡弹
   enemies.splice(i,1);shake=Math.max(shake,.12);
 }
 
@@ -1867,7 +1917,7 @@ function update(dt){
     items.push({type:typ,x:ix,y:iy,vy:28,vx:0,life:12,r:18});
     showBanner('补给抵达',1.8);
   }
-  flushWaves();cullEscortsDuringBoss();
+  flushWaves();cullEscortsDuringBoss();updateBossAdds(dt);
   const script=activeWaves||STAGES[stage-1];
   if(bossSpawned&&!boss&&enemies.length===0&&eBullets.length<8&&stageT>script.waves[script.waves.length-1].t+1.2){
     nextStage();return;
@@ -2043,13 +2093,14 @@ function update(dt){
       else{e.y=hy+Math.sin(e.t*0.8)*4;if(e.mode==='hold') e.x+=Math.sin(e.t*0.6)*25*dt;}
     }else{e.y+=e.spd*dt;}
     e.x=Math.max(e.w/2,Math.min(W-e.w/2,e.x));
-    if(e.y>H+60){stageEscaped++;enemies.splice(i,1);continue;}
+    if(e.y>H+60){if(!e.bossAdd) stageEscaped++;enemies.splice(i,1);continue;}
     if(e.cd<=0&&e.y>0&&e.y<H*0.88){
       enemyFire(e);
       const base=e.family==='drone'?0.7:e.family==='sniper'?1.9:e.family==='tank'?1.5:e.type==='fodder'?2.2:e.type==='aimed'?1.1:e.type==='spread'?1.5:1.0;
       let cdMul=1;
       if(eBullets.length>140) cdMul=1.4;
       else if(countAimedOrDense()) cdMul=(e.type==='elite'||e.type==='fodder'||e.type==='aimed')?1.3:1.25;
+      if(e.bossAdd) cdMul*=2.2; // bossadds1: Boss 战小兵开火更稀疏
       e.cd=base*cFire()/(1+(stage-1)*0.03)*cdMul;
     }
 
